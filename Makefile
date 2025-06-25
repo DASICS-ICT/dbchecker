@@ -2,6 +2,8 @@ BUILD_DIR = ./build
 
 PRJ = playground
 
+default: verilog
+
 test:
 	mill -i $(PRJ).test
 

@@ -1,12 +1,13 @@
+import circt.stage._
+import chisel3._
+import chisel3.stage._
+
+
 object Elaborate extends App {
-  val firtoolOptions = Array(
-    "--lowering-options=" + List(
-      // make yosys happy
-      // see https://github.com/llvm/circt/blob/main/docs/VerilogGeneration.md
-      "disallowLocalVariables",
-      "disallowPackedArrays",
-      "locationInfoStyle=wrapInAtSquareBracket"
-    ).reduce(_ + "," + _)
-  )
-  circt.stage.ChiselStage.emitSystemVerilogFile(new gcd.GCD(), args, firtoolOptions)
+    (new ChiselStage).execute(args, Seq(ChiselGeneratorAnnotation(() => new DBChecker.DBChecker))
+    :+ CIRCTTargetAnnotation(CIRCTTarget.Verilog)
+    :+ FirtoolOption("--disable-annotation-unknown")
+    :+ FirtoolOption("--lowering-options=noAlwaysComb,disallowPackedArrays,disallowLocalVariables,locationInfoStyle=wrapInAtSquareBracket") 
+    :+ FirtoolOption("--lower-memories")
+    )
 }
