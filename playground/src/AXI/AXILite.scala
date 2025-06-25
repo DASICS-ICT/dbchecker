@@ -5,7 +5,7 @@ import chisel3.util._
 
 class AxiLiteAddr(val addrWidth: Int) extends Bundle {
   val addr = UInt(addrWidth.W)
-  // val prot = UInt(3.W) // optional, but included by vivado
+  val prot = UInt(3.W) // optional, but included by vivado
 }
 
 object AxiLiteAddr {
