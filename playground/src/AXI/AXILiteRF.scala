@@ -57,10 +57,8 @@ class AXILiteRF(addrWidth: Int = 32, dataWidth: Int = 32, Depth: Int = 4) extend
     is(AXILiteState.readData) {
       io.r.valid := true.B
       // Address decoding for read
-      val index = readAddrReg(
-        log2Ceil((dataWidth / 8)) + log2Ceil(Depth) - 1, 
-        log2Ceil((dataWidth / 8)))  // aligned
-      when(index < Depth.U && readAddrReg(log2Ceil((dataWidth / 8)) - 1,0) === 0.U) {
+      val index = readAddrReg(log2Ceil(Depth) - 1, 0)
+      when(index < Depth.U) {
         io.r.bits.data := regFile(index)
       }.otherwise {
         io.r.bits.resp := 2.U  // SLVERR for invalid address
@@ -72,20 +70,11 @@ class AXILiteRF(addrWidth: Int = 32, dataWidth: Int = 32, Depth: Int = 4) extend
     
     is(AXILiteState.writeData) {
       // Perform write operation
-      val index = writeAddrReg(
-        log2Ceil((dataWidth / 8)) + log2Ceil(Depth) - 1, 
-        log2Ceil((dataWidth / 8)))  // aligned
-      when(index < Depth.U && readAddrReg(log2Ceil((dataWidth / 8)) - 1,0) === 0.U) {
-        val writeDataResult = Wire(UInt(dataWidth.W))
+      val index = writeAddrReg(log2Ceil(Depth) - 1, 0)  // aligned
+      when(index < Depth.U) {
         // Byte-wise write using w.bits.strb
-        for (i <- 0 until (dataWidth / 8)) {
-          when(writeStrbReg(i)) {
-            writeDataResult := writeDataReg(8*i+7, 8*i)
-          }.otherwise{
-            writeDataResult := regFile(index)(8*i+7, 8*i)
-          }
-        }
-        regFile(index) := writeDataResult
+        val wmask = Cat((0 until (dataWidth / 8)).reverse.map(i => Fill(8, writeStrbReg(i))))
+        regFile(index) := (regFile(index) & ~wmask) | (writeDataReg & wmask)
       }.otherwise {
         io.b.bits.resp := 2.U  // SLVERR for invalid address
       }
