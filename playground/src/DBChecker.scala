@@ -11,5 +11,5 @@ class DBChecker extends Module {
   m_axi_dma <> s_axi_dma
 
   val rf = Module(new AXILiteRF(32, 32, 4))
-  rf.io <> s_axil_ctrl
+  rf.s_axil <> s_axil_ctrl
 }
