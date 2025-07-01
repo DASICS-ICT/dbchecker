@@ -3,8 +3,7 @@ package axi
 import chisel3._
 import chisel3.util._
 
-class AxiAddr(val addrWidth: Int, val dataWidth: Int, val idWidth: Int, val userWidth: Int)
-    extends Bundle {
+class AxiAddr(val addrWidth: Int, val dataWidth: Int = 0, val idWidth: Int = 0, val userWidth: Int = 0) extends Bundle {
   // required fields
   val addr = UInt(addrWidth.W)
   val id = UInt(idWidth.W)
@@ -35,7 +34,7 @@ class AxiAddr(val addrWidth: Int, val dataWidth: Int, val idWidth: Int, val user
 }
 
 object AxiAddr {
-  def apply(addrWidth: Int, dataWidth: Int, idWidth: Int = 0, userWidth: Int = 0) = {
+  def apply(addrWidth: Int, dataWidth: Int = 0, idWidth: Int = 0, userWidth: Int = 0) = {
     new AxiAddr(addrWidth = addrWidth,
                 dataWidth = dataWidth,
                 idWidth = idWidth,
@@ -43,7 +42,7 @@ object AxiAddr {
   }
 }
 
-abstract class AxiData(val dataWidth: Int, val userWidth: Int) extends Bundle {
+abstract class AxiData(val dataWidth: Int, val userWidth: Int = 0) extends Bundle {
   val data = UInt(dataWidth.W)
   val last = Bool()
   val user = UInt(userWidth.W) // optional
@@ -57,7 +56,7 @@ abstract class AxiData(val dataWidth: Int, val userWidth: Int) extends Bundle {
   def getStrb: Option[UInt] = None
 }
 
-class AxiReadData(dataWidth: Int, val idWidth: Int, userWidth: Int)
+class AxiReadData(dataWidth: Int, val idWidth: Int = 0, userWidth: Int = 0)
     extends AxiData(dataWidth = dataWidth, userWidth = userWidth) {
   val id = UInt(idWidth.W)
   val resp = UInt(2.W)
@@ -75,7 +74,7 @@ object AxiReadData {
   }
 }
 
-class AxiWriteData(dataWidth: Int, userWidth: Int)
+class AxiWriteData(dataWidth: Int, userWidth: Int = 0)
     extends AxiData(dataWidth = dataWidth, userWidth = userWidth) {
   val strb = UInt((dataWidth / 8).W)
 
@@ -92,7 +91,7 @@ object AxiWriteData {
   }
 }
 
-class AxiWriteResp(val idWidth: Int, val userWidth: Int) extends Bundle {
+class AxiWriteResp(val idWidth: Int = 0, val userWidth: Int = 0) extends Bundle {
   val id = UInt(idWidth.W)
   val resp = UInt(2.W)
   val user = UInt(userWidth.W) // optional
