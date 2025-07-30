@@ -1,3 +1,4 @@
+OUT_DIR = ./out
 BUILD_DIR = ./build
 
 PRJ = playground
@@ -28,7 +29,7 @@ idea:
 	mill -i mill.idea.GenIdea/idea
 
 clean:
-	-rm -rf $(BUILD_DIR)
+	-rm -rf $(OUT_DIR) $(BUILD_DIR)
 
 .PHONY: test verilog help reformat checkformat clean
 

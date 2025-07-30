@@ -1,8 +1,7 @@
-package DBChecker
+package axi
 
 import chisel3._
 import chisel3.util._
-import axi._
 
 class RingBuffer[T <: Data](gen: T, depth: Int) extends Module {
   val io = IO(new Bundle {
@@ -60,4 +59,26 @@ class RingBuffer[T <: Data](gen: T, depth: Int) extends Module {
 object RingBuffer {
   def apply[T <: Data](gen: T, depth: Int): RingBuffer[T] = 
     new RingBuffer(gen, depth)
+}
+
+class AXIRingBuffer(val addrWidth: Int, val dataWidth: Int, val depth: Int) extends Module {
+  val m_axi = IO(new AxiMaster(addrWidth, dataWidth))
+  val s_axi = IO(new AxiSlave(addrWidth, dataWidth))
+
+  val ar_buf = Module(new RingBuffer(new AxiAddr(addrWidth),depth))
+  val r_buf = Module(new RingBuffer(new AxiReadData(dataWidth),depth))
+  val aw_buf = Module(new RingBuffer(new AxiAddr(addrWidth),depth))
+  val w_buf = Module(new RingBuffer(new AxiWriteData(dataWidth),depth))
+  val b_buf = Module(new RingBuffer(new AxiWriteResp(),depth))
+
+  ar_buf.io.enq <> s_axi.ar
+  ar_buf.io.deq <> m_axi.ar
+  r_buf.io.enq <> m_axi.r
+  r_buf.io.deq <> s_axi.r
+  aw_buf.io.enq <> s_axi.aw
+  aw_buf.io.deq <> m_axi.aw
+  w_buf.io.enq <> s_axi.w
+  w_buf.io.deq <> m_axi.w
+  b_buf.io.enq <> m_axi.b
+  b_buf.io.deq <> s_axi.b
 }
