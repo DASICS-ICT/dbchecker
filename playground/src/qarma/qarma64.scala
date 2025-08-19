@@ -102,6 +102,18 @@ class MetaBundle(max_round: Int) extends Bundle with QarmaParams {
   val pointer = UInt(log2Ceil(code_map_width * (max_round * 2 + 2)).W)
 }
 
+class QarmaInputBundle extends Bundle{ 
+  val encrypt = Input(Bool())
+  val keyh = Input(UInt(64.W))
+  val keyl = Input(UInt(64.W))
+  val tweak = Input(UInt(64.W))
+  val text = Input(UInt(64.W))
+  val actual_round = Input(UInt(3.W))
+}
+class QarmaOutputBundle extends Bundle{ 
+  val result = Output(UInt(64.W))
+}
+
 class MixColumnOperator extends Module with QarmaParams {
   val io = IO(new MixColumnOperatorIO)
 
@@ -289,22 +301,10 @@ class ExecutionContext(max_round: Int = 7, depth: Int = 0, port: Int = 0, step_l
     output.old_data(i) := data(i).asTypeOf(new DataBundle(max_round, step_len))
   }
 }
-
-class QarmaSingleCycle(max_round: Int = 7) extends Module with QarmaParams{
-
-  val input = IO(Flipped(Decoupled(new Bundle {
-    val encrypt = Bool()
-    val keyh = UInt(64.W)
-    val keyl = UInt(64.W)
-    val tweak = UInt(64.W)
-    val text = UInt(64.W)
-    val actual_round = UInt(3.W)
-  })))
-  val output = IO(Decoupled(new Bundle {
-    val result = UInt(64.W)
-  }))
-
-  // Step 1 ---- Generate Key
+abstract class QarmaBase(max_round: Int = 7) extends Module with QarmaParams {
+  val input = IO(Flipped(Decoupled(new QarmaInputBundle)))
+  val output = IO(Decoupled(new QarmaOutputBundle))
+    // Step 1 ---- Generate Key
   val mix_column = Module(new MixColumnOperator)
   mix_column.io.in := input.bits.keyl
   val w0 = Mux(input.bits.encrypt, input.bits.keyh, o_operation(input.bits.keyh))
@@ -322,6 +322,9 @@ class QarmaSingleCycle(max_round: Int = 7) extends Module with QarmaParams{
   val backward_tweak_update_operator_vec = Array.fill(max_round)(Module(new BackwardTweakUpdateOperator).io)
   var wire_index = 0
   var module_index = 0
+}
+
+class QarmaSingleCycle(max_round: Int = 7) extends QarmaBase {
 
   // Step 3 ---- Forward
   is_vec(wire_index) := input.bits.text ^ w0
@@ -386,38 +389,9 @@ class QarmaSingleCycle(max_round: Int = 7) extends Module with QarmaParams{
   input.ready := true.B
 }
 
-class QarmaMultiCycle(max_round: Int = 7) extends Module with QarmaParams{
-
-  val input = IO(Flipped(Decoupled(new Bundle {
-    val encrypt = Bool()
-    val keyh = UInt(64.W)
-    val keyl = UInt(64.W)
-    val tweak = UInt(64.W)
-    val text = UInt(64.W)
-    val actual_round = UInt(3.W)
-  })))
-  val output = IO(Decoupled(new Bundle {
-    val result = UInt(64.W)
-  }))
-
-  // Step 1 ---- Generate Key
-  val mix_column = Module(new MixColumnOperator)
-  mix_column.io.in := input.bits.keyl
-  val w0 = Mux(input.bits.encrypt, input.bits.keyh, o_operation(input.bits.keyh))
-  val k0 = Mux(input.bits.encrypt, input.bits.keyl, input.bits.keyl ^ alpha)
-  val w1 = Mux(input.bits.encrypt, o_operation(input.bits.keyh), input.bits.keyh)
-  val k1 = Mux(input.bits.encrypt, input.bits.keyl, mix_column.io.out)
+class QarmaMultiCycle(max_round: Int = 7) extends QarmaBase {
 
   // Step 2 ---- Define Hardware
-  val is_vec = Wire(Vec(max_round * 2 + 4, UInt(64.W)))
-  val tk_vec = Wire(Vec(max_round * 2 + 4, UInt(64.W)))
-  val forward_operator_vec = Array.fill(max_round + 1)(Module(new ForwardOperator).io)
-  val forward_tweak_update_operator_vec = Array.fill(max_round)(Module(new ForwardTweakUpdateOperator).io)
-  val reflector = Module(new PseudoReflectOperator)
-  val backward_operator_vec = Array.fill(max_round + 1)(Module(new BackwardOperator).io)
-  val backward_tweak_update_operator_vec = Array.fill(max_round)(Module(new BackwardTweakUpdateOperator).io)
-  var wire_index = 0
-  var module_index = 0
   val temp_index = new Array[Int](3)
   val busy_table = RegInit(VecInit(Seq.fill(4)(false.B)))
   val stall_table = Wire(Vec(4, Bool()))
@@ -522,4 +496,37 @@ class QarmaMultiCycle(max_round: Int = 7) extends Module with QarmaParams{
   output.bits.result := internal_regs(3)(64 * 6 - 1, 64 * 5) ^ internal_regs(3)(64 * 2 - 1, 64 * 1)
   output.valid := busy_table(3)
   input.ready := !stall_table(0)
+}
+
+class QarmaDummy(wait_round: Int = 3) extends Module with QarmaParams {
+
+  val input = IO(Flipped(Decoupled(new QarmaInputBundle)))
+  val output = IO(Decoupled(new QarmaOutputBundle))
+
+  val valid_reg = RegInit(false.B)
+  val text_reg = RegInit(0.U(64.W))
+  val key_reg = RegInit(0.U(128.W))
+  val wait_timer = RegInit(0.U(4.W))
+
+  when (input.valid && input.ready) {
+    wait_timer := 0.U
+    valid_reg := true.B
+    text_reg := input.bits.text
+    key_reg := Cat(input.bits.keyh, input.bits.keyl)
+  }
+  .elsewhen (output.valid && output.ready) {
+    wait_timer := 0.U
+    valid_reg := false.B
+  }
+  .elsewhen (wait_timer < wait_round.U) {
+    wait_timer := wait_timer + 1.U
+  }
+
+  output.bits.result := input.bits.text ^ key_reg(63, 0) ^ key_reg(127, 64)
+  output.valid := valid_reg & wait_timer === wait_round.U
+  input.ready := !valid_reg
+
+  // if (debug) {
+  //   printf("[QarmaDummy] input %x\n", input.bits.text)
+  // }
 }
