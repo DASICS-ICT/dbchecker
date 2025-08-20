@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.util._
 
 trait DBCheckerConst {
-  val debug = true.B
+  val debug = true
   val RegNum = 8 // total register num
   val addrWidth = 32 // datawidth = 64
 
@@ -50,12 +50,22 @@ trait DBCheckerConst {
   // --------------------------------------------------------------------------------------------------
 
 
-class DBCheckerMtdt extends Bundle {
-    val magic_num    = UInt(6.W)
+class DBCheckerMtdt extends Bundle with DBCheckerConst{
+    val mn           = UInt(6.W)
     val id           = UInt(4.W)
     val typ          = UInt(1.W)
-    val rw           = UInt(1.W)
+    val rw           = UInt(1.W) // 0:r 1:w
     val bnd          = UInt(52.W)
+
+    def get_index: UInt = {
+        this.asUInt(63, 64 - log2Up(dbte_num))
+    }
+    def get_ptr: UInt = {
+        Cat(this.asUInt(63, 36), 0.U(36.W))
+    }
+    def get_dbte: UInt = {
+        this.asUInt(35, 0)
+    }
 }
 
 class DBCheckerBndS extends Bundle {
@@ -80,6 +90,11 @@ class DBCheckerErrCnt extends Bundle {
     val cnt        = Vec(3, UInt(20.W))
     val err_latest = UInt(4.W)
 }
+class DBCheckerErrReq extends Bundle {
+    val typ = UInt(1.W) // 0: bnd, 1: mtdt
+    val info = UInt(64.W)
+    val mtdt = UInt(64.W)
+}
 
   // -----------------------------------------------------------------------------------------------------------
   // |valid(1)|operation(0:free 1:alloc 2:clr_err)|0...0|E(metadata)_index(if free) / metadata[53:0] (if alloc)|
@@ -96,19 +111,18 @@ class DBCheckerCommand extends Bundle {
   // |E(metadata)[63:36]|access_addr(36)|
   // ------------------------------------
 
-class DBCheckerPtr extends Bundle {
+class DBCheckerPtr extends Bundle with DBCheckerConst{
     val e_mtdt_hi = UInt(28.W)
     val access_addr = UInt(36.W)
+    def get_index: UInt = {
+        this.asUInt(63, 64 - log2Up(dbte_num))
+    }
 }
 
 object DBTEAllocState extends ChiselEnum {
   val waitEncryptReq, waitEncryptResp = Value
 }
 
-object DBCheckerRState extends ChiselEnum {
-  val waitCheckARreq, waitCheckARresp, releaseAR, returnR = Value
-}
-
-object DBCheckerWState extends ChiselEnum {
-  val waitCheckAWreq, waitCheckAWresp, waitW, releaseAWnW, returnB = Value
+object DBCheckerState extends ChiselEnum {
+  val ReadDBTE, WaitCheckreq, WaitCheckresp, Release, Return = Value
 }

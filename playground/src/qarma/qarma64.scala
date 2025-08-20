@@ -498,7 +498,7 @@ class QarmaMultiCycle(max_round: Int = 7) extends QarmaBase {
   input.ready := !stall_table(0)
 }
 
-class QarmaDummy(wait_round: Int = 3) extends Module with QarmaParams {
+class QarmaDummy extends Module with QarmaParams {
 
   val input = IO(Flipped(Decoupled(new QarmaInputBundle)))
   val output = IO(Decoupled(new QarmaOutputBundle))
@@ -506,24 +506,28 @@ class QarmaDummy(wait_round: Int = 3) extends Module with QarmaParams {
   val valid_reg = RegInit(false.B)
   val text_reg = RegInit(0.U(64.W))
   val key_reg = RegInit(0.U(128.W))
+  val tweak_reg = RegInit(0.U(64.W))
+  val actual_round_reg = RegInit(0.U(3.W))
   val wait_timer = RegInit(0.U(4.W))
 
   when (input.valid && input.ready) {
     wait_timer := 0.U
     valid_reg := true.B
     text_reg := input.bits.text
+    tweak_reg := input.bits.tweak
+    actual_round_reg := input.bits.actual_round
     key_reg := Cat(input.bits.keyh, input.bits.keyl)
   }
   .elsewhen (output.valid && output.ready) {
     wait_timer := 0.U
     valid_reg := false.B
   }
-  .elsewhen (wait_timer < wait_round.U) {
+  .elsewhen (wait_timer < actual_round_reg) {
     wait_timer := wait_timer + 1.U
   }
 
-  output.bits.result := input.bits.text ^ key_reg(63, 0) ^ key_reg(127, 64)
-  output.valid := valid_reg & wait_timer === wait_round.U
+  output.bits.result := input.bits.text ^ key_reg(63, 0) ^ key_reg(127, 64) ^ tweak_reg
+  output.valid := valid_reg & wait_timer === actual_round_reg
   input.ready := !valid_reg
 
   // if (debug) {
