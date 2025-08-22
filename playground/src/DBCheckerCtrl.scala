@@ -128,7 +128,6 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   val err_mtdt_reg = regFile(chk_err_mtdt)
 
   val err_cmd_v = WireInit(false.B)
-  val err_cmd_info = WireInit(0.U(64.W))
 
   // encrypt req: used when alloc DBTE
   // temproarily not used
@@ -150,7 +149,6 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
         cmd_reg := Cat(0.U(1.W), cmd_reg(62, 0)) // clear v
         when (cmd_reg_struct.imm >= dbte_num.U) { // illegal cmd
           err_cmd_v := true.B
-          err_cmd_info := cmd_reg.asUInt
         }
         .otherwise{
           val dbte_index = cmd_reg_struct.imm(log2Up(dbte_num) - 1, 0)
@@ -182,7 +180,6 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
                   dbte_alloc_id := 0.U
                   cmd_reg := Cat(0.U(1.W), cmd_reg(62, 0)) // clear v
                   err_cmd_v := true.B
-                  err_cmd_info := cmd_reg.asUInt
                 }
                 .otherwise { // change id, retry
                   dbte_alloc_id := dbte_alloc_id + 1.U
@@ -218,13 +215,9 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
                         Mux(err_cmd_v, 1.U << err_cmd, err_cnt_reg_struct.err_latest)))
   when (!(cmd_reg_struct.v && cmd_reg_struct.op === cmd_op_clr_err)) { // not clr_err
     err_cnt_reg := Cat(cmd_cnt, mtdt_cnt, bnd_cnt, err_latest)
-    when (err_req_r.valid || err_req_w.valid) {
-      err_info_reg := Mux(err_req_r.valid, err_req_r.bits.info, err_req_w.bits.info)
-      err_mtdt_reg := Mux(err_req_r.valid, err_req_r.bits.mtdt, err_req_w.bits.mtdt)
-    }
-    .elsewhen (err_cmd_v) {
-      err_info_reg := cmd_reg.asUInt
-      err_mtdt_reg := 0.U
+    when (err_req_r.valid || err_req_w.valid || err_cmd_v) {
+      err_info_reg := Mux(err_req_r.valid, err_req_r.bits.info, Mux(err_req_w.valid, err_req_w.bits.info, cmd_reg.asUInt))
+      err_mtdt_reg := Mux(err_req_r.valid, err_req_r.bits.mtdt, Mux(err_req_w.valid, err_req_w.bits.mtdt, 0.U))
     }
   }
   err_req_r.ready := !(cmd_reg_struct.v && cmd_reg_struct.op === cmd_op_clr_err)

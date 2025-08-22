@@ -102,6 +102,7 @@ class DBChecker extends Module with DBCheckerConst{
           ctrl.err_req_r.valid := true.B
           ctrl.err_req_r.bits.typ := 1.U // mtdt error
           ctrl.err_req_r.bits.info := r_araddr_ptr.asUInt
+          ctrl.err_req_w.bits.mtdt := 0.U
           when (ctrl.err_req_r.ready) {r_chan_status := DBCheckerState.Release}
         } 
         .otherwise {
@@ -210,6 +211,7 @@ class DBChecker extends Module with DBCheckerConst{
           ctrl.err_req_w.valid := true.B
           ctrl.err_req_w.bits.typ := 1.U // mtdt error
           ctrl.err_req_w.bits.info := w_awaddr_ptr.asUInt
+          ctrl.err_req_w.bits.mtdt := 0.U
           when (ctrl.err_req_w.ready) {
             w_aw_release := true.B
             w_w_release := true.B
