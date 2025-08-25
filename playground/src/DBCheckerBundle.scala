@@ -60,8 +60,8 @@ class DBCheckerMtdt extends Bundle with DBCheckerConst{
     def get_index: UInt = {
         this.asUInt(63, 64 - log2Up(dbte_num))
     }
-    def get_ptr: UInt = {
-        Cat(this.asUInt(63, 36), 0.U(36.W))
+    def get_ptr(base: UInt): UInt = {
+        Cat(this.asUInt(63, 36), base)
     }
     def get_dbte: UInt = {
         this.asUInt(35, 0)

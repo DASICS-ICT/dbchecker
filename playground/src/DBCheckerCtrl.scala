@@ -170,7 +170,10 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
               when (!dbte_v_bitmap(e_mtdt.get_index)) { // alloc success
                 dbte_alloc_id := 0.U
                 cmd_reg := Cat(0.U(1.W), cmd_reg(62, 0)) // clear v
-                res_reg := e_mtdt.get_ptr // store the result
+                val fake_mtdt = Cat(0.U(10.W),cmd_reg_struct.imm(53, 0)).asTypeOf(new DBCheckerMtdt)
+                res_reg := e_mtdt.get_ptr(Mux(fake_mtdt.typ.asBool, 
+                                              Cat(fake_mtdt.bnd.asTypeOf(new DBCheckerBndL).limit_base,0.U(16.W)), 
+                                              fake_mtdt.bnd.asTypeOf(new DBCheckerBndS).limit_base)) // store the result
                 dbte_v_bitmap(e_mtdt.get_index) := true.B
                 dbte_sram_w.address := e_mtdt.get_index
                 dbte_sram_w.enable  := true.B
