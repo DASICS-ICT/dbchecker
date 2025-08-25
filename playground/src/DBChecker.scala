@@ -104,7 +104,7 @@ class DBChecker extends Module with DBCheckerConst{
           // DBTE entry is invalid
           r_chk_err := true.B
           ctrl.err_req_r.valid := true.B
-          ctrl.err_req_r.bits.typ := 1.U // mtdt error
+          ctrl.err_req_r.bits.typ := err_mtdt_finv
           ctrl.err_req_r.bits.info := r_araddr_ptr.asUInt
           ctrl.err_req_w.bits.mtdt := 0.U
           when (ctrl.err_req_r.ready) {r_chan_status := DBCheckerState.Release}
@@ -144,12 +144,13 @@ class DBChecker extends Module with DBCheckerConst{
         val bnd_offset = Mux(decrypt_result.typ.asBool, 
                             decrypt_result.bnd.asTypeOf(new DBCheckerBndL).limit_offset, 
                             decrypt_result.bnd.asTypeOf(new DBCheckerBndS).limit_offset)
-        val bnd_err = (r_araddr_ptr.access_addr < bnd_base) || (r_araddr_ptr.access_addr > (bnd_base + bnd_offset)) || decrypt_result.rw.asBool // out of bound or type mismatch
-        when (magic_num_err || bnd_err) { // magic_num check
+        val bnd_err = (r_araddr_ptr.access_addr < bnd_base) || (r_araddr_ptr.access_addr > (bnd_base + bnd_offset)) 
+        val bnd_mismatch = decrypt_result.rw.asBool
+        when (magic_num_err || bnd_err || bnd_mismatch) { // magic_num check
           // magic_num / bnd error
           r_chk_err := true.B
           ctrl.err_req_r.valid := true.B
-          ctrl.err_req_r.bits.typ := magic_num_err // 1: mtdt error 0:bnd_error
+          ctrl.err_req_r.bits.typ  := Mux(magic_num_err, err_mtdt_fmn, Mux(bnd_err, err_bnd_farea, err_bnd_ftype))
           ctrl.err_req_r.bits.info := r_araddr_ptr.asUInt
           ctrl.err_req_r.bits.mtdt := decrypt_result.asUInt
           when (ctrl.err_req_r.ready) {
@@ -213,7 +214,7 @@ class DBChecker extends Module with DBCheckerConst{
           // DBTE entry is invalid
           w_chk_err := true.B
           ctrl.err_req_w.valid := true.B
-          ctrl.err_req_w.bits.typ := 1.U // mtdt error
+          ctrl.err_req_w.bits.typ := err_mtdt_finv
           ctrl.err_req_w.bits.info := w_awaddr_ptr.asUInt
           ctrl.err_req_w.bits.mtdt := 0.U
           when (ctrl.err_req_w.ready) {
@@ -255,12 +256,13 @@ class DBChecker extends Module with DBCheckerConst{
         val bnd_offset = Mux(decrypt_result.typ.asBool, 
                             decrypt_result.bnd.asTypeOf(new DBCheckerBndL).limit_offset, 
                             decrypt_result.bnd.asTypeOf(new DBCheckerBndS).limit_offset)
-        val bnd_err = (w_awaddr_ptr.access_addr < bnd_base) || (w_awaddr_ptr.access_addr > (bnd_base + bnd_offset)) || !decrypt_result.rw.asBool // out of bound or type mismatch
-        when (magic_num_err || bnd_err) { // magic_num check
+        val bnd_err = (w_awaddr_ptr.access_addr < bnd_base) || (w_awaddr_ptr.access_addr > (bnd_base + bnd_offset)) 
+        val bnd_mismatch = !decrypt_result.rw.asBool // out of bound or type mismatch
+        when (magic_num_err || bnd_err || bnd_mismatch) { // magic_num check
           // magic_num / bnd error
           w_chk_err := true.B
           ctrl.err_req_w.valid := true.B
-          ctrl.err_req_w.bits.typ := magic_num_err // 1: mtdt error 0:bnd_error
+          ctrl.err_req_w.bits.typ := Mux(magic_num_err, err_mtdt_fmn, Mux(bnd_err, err_bnd_farea, err_bnd_ftype)) // 1: mtdt error 0:bnd_error
           ctrl.err_req_w.bits.info := w_awaddr_ptr.asUInt
           ctrl.err_req_w.bits.mtdt := decrypt_result.asUInt
           when (ctrl.err_req_w.ready) {

@@ -29,20 +29,27 @@ trait DBCheckerConst {
   // checker error metadata register (0x7, RO)
   val chk_err_mtdt  = 0x7 // 0x38
 
-    def cmd_op_free  = 0.U
-    def cmd_op_alloc = 1.U
-    def cmd_op_clr_err = 2.U
+    def cmd_op_free  = 0.U(2.W)
+    def cmd_op_alloc = 1.U(2.W)
+    def cmd_op_clr_err = 2.U(2.W)
+
+    def cmd_status_inv     = 0.U(2.W)
+    def cmd_status_req     = 1.U(2.W)
+    def cmd_status_ok      = 2.U(2.W)
+    def cmd_status_error   = 3.U(2.W)
 
     def mtdt_typ_offset = 53.U
-    def mtdt_typ_s = 0.U
-    def mtdt_typ_l = 1.U    
+    def mtdt_typ_s = 0.U(1.W)
+    def mtdt_typ_l = 1.U(1.W)  
 
-    def mtdt_rw_r = 0.U
-    def mtdt_rw_w = 1.U
+    def mtdt_rw_r = 0.U(1.W)
+    def mtdt_rw_w = 1.U(1.W)
 
-    def err_bnd  = 0.U
-    def err_mtdt = 1.U
-    def err_cmd  = 2.U
+    def err_bnd_farea  = 0.U(2.W)
+    def err_bnd_ftype  = 1.U(2.W)
+    def err_mtdt_finv  = 2.U(2.W)
+    def err_mtdt_fmn   = 3.U(2.W)
+
 }
 
   // --------------------------------------------------------------------------------------------------
@@ -78,32 +85,32 @@ class DBCheckerBndL extends Bundle {
     val limit_base   = UInt(20.W)
 }
 
-  // ------------------------------------------
-  // |cnt2(20)|cnt1(20)|cnt0(20)|latest err(4)|
-  // ------------------------------------------
-  // 0: bnd err   (out of bound / permission error) 
-  // 1: mtdt err  (err magic_num / metadata not valid) 
-  // 2: cmd err   (illegal command; DBTE is full)
-  // 3: reserved
+  // ---------------------------------------------------
+  // |cnt3(15)|cnt2(15)|cnt1(15)|cnt0(15)|latest err(4)|
+  // ---------------------------------------------------
+  // 0: bnd out-of-bound error
+  // 1: bnd type mismatch error
+  // 2: mtdt invalid error
+  // 3: mtdt wrong magic_num  error
 
 class DBCheckerErrCnt extends Bundle {
-    val cnt        = Vec(3, UInt(20.W))
+    val cnt        = Vec(4, UInt(15.W))
     val err_latest = UInt(4.W)
 }
 class DBCheckerErrReq extends Bundle {
-    val typ = UInt(1.W) // 0: bnd, 1: mtdt
+    val typ = UInt(2.W) // 0: bnd, 1: mtdt
     val info = UInt(64.W)
     val mtdt = UInt(64.W)
 }
 
   // -----------------------------------------------------------------------------------------------------------
-  // |valid(1)|operation(0:free 1:alloc 2:clr_err)|0...0|E(metadata)_index(if free) / metadata[53:0] (if alloc)|
+  // |status(2)|operation(0:free 1:alloc 2:clr_err)|0...0|E(metadata)_index(if free) / metadata[53:0] (if alloc)|
   // -----------------------------------------------------------------------------------------------------------
 
 class DBCheckerCommand extends Bundle {
-    val v   = Bool()
+    val status = UInt(2.W) 
     val op  = UInt(2.W)
-    val pad = UInt(7.W)
+    val pad = UInt(6.W)
     val imm = UInt(54.W)
 }
 
