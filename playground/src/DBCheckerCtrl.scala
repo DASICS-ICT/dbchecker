@@ -117,7 +117,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
 
   // DBTE alloc reg
   val dbte_alloc_state = RegInit(DBTEAllocState.waitEncryptReq)
-  val dbte_alloc_id = RegInit(0.U(2.W))
+  val dbte_alloc_id = RegInit(0.U(4.W))
   
   val cmd_reg = regFile(chk_cmd)
   val cmd_reg_struct = cmd_reg.asTypeOf(new DBCheckerCommand)
@@ -136,7 +136,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   encrypt_req.bits.tweak := "hDEADBEEFDEADBEEF".U
   encrypt_req.bits.actual_round := 3.U
 
-  encrypt_req.bits.text := Cat(magic_num.U, dbte_alloc_id, cmd_reg_struct.imm(53, 0)) // Build a new DBTE entry
+  encrypt_req.bits.text := Cat(magic_num.U(6.W), dbte_alloc_id, cmd_reg_struct.imm(53, 0)) // Build a new DBTE entry
   encrypt_req.bits.keyh := regFile(chk_keyh)
   encrypt_req.bits.keyl := regFile(chk_keyl)
 

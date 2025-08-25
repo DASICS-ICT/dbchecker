@@ -46,10 +46,14 @@ class DBChecker extends Module with DBCheckerConst{
   ctrl.err_req_w.valid := false.B
   ctrl.err_req_w.bits := 0.U.asTypeOf(new DBCheckerErrReq)
 
-
   qarma_decrypt.output.ready := false.B
   qarma_decrypt.input.valid := false.B
-  qarma_decrypt.input.bits := 0.U.asTypeOf(new QarmaInputBundle)
+  qarma_decrypt.input.bits.encrypt := 0.U
+  qarma_decrypt.input.bits.tweak := "hDEADBEEFDEADBEEF".U
+  qarma_decrypt.input.bits.actual_round := 3.U
+  qarma_decrypt.input.bits.text := 0.U
+  qarma_decrypt.input.bits.keyh := ctrl.ctrl_reg(chk_keyh)
+  qarma_decrypt.input.bits.keyl := ctrl.ctrl_reg(chk_keyl)
 
   s_axi_io_rx.ar.ready := false.B
   m_axi_io_rx.ar.valid := false.B
