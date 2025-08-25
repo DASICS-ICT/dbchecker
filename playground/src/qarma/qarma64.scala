@@ -526,7 +526,7 @@ class QarmaDummy extends Module with QarmaParams {
     wait_timer := wait_timer + 1.U
   }
 
-  output.bits.result := input.bits.text ^ key_reg(63, 0) ^ key_reg(127, 64) ^ tweak_reg
+  output.bits.result := text_reg ^ key_reg(63, 0) ^ key_reg(127, 64) ^ tweak_reg
   output.valid := valid_reg & wait_timer === actual_round_reg
   input.ready := !valid_reg
 
