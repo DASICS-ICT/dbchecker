@@ -263,7 +263,7 @@ class DBChecker extends Module with DBCheckerConst{
               qarma_decrypt.output.ready := true.B
               w_aw_release := true.B
               w_w_release := true.B
-              r_chan_status := DBCheckerState.Release
+              w_chan_status := DBCheckerState.Release
             }
         }
         .otherwise {

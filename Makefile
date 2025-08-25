@@ -12,7 +12,7 @@ verilog:
 	$(call git_commit, "generate verilog")
 	mkdir -p $(BUILD_DIR)
 	mill -i $(PRJ).runMain Elaborate --target-dir $(BUILD_DIR)
-
+	sed -i 's/\blogic\b/reg/g' $(BUILD_DIR)/DBChecker.v
 help:
 	mill -i $(PRJ).runMain Elaborate --help
 
