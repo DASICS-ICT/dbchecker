@@ -486,12 +486,12 @@ class QarmaMultiCycle(max_round: Int = 7) extends QarmaBase {
     }
   }
 
-  when (output.valid) {
-    printf("[PEC] stall_table %x\t\t\t%x\t\t\t%x\t\t\t%x\n", stall_table(0), stall_table(1), stall_table(2), stall_table(3))
-    printf("[PEC] busy_table %x\t\t\t%x\t\t\t%x\t\t\t%x\n", busy_table(0), busy_table(1), busy_table(2), busy_table(3))
-    printf("[PEC] internal_regs %x\t%x\t%x\t%x\n", internal_regs(0)(64 * 6 - 1, 64 * 5),
-      internal_regs(1)(64 * 6 - 1, 64 * 5), internal_regs(2)(64 * 6 - 1, 64 * 5), internal_regs(3)(64 * 6 - 1, 64 * 5))
-  }
+  // when (output.valid) {
+  //   printf("[PEC] stall_table %x\t\t\t%x\t\t\t%x\t\t\t%x\n", stall_table(0), stall_table(1), stall_table(2), stall_table(3))
+  //   printf("[PEC] busy_table %x\t\t\t%x\t\t\t%x\t\t\t%x\n", busy_table(0), busy_table(1), busy_table(2), busy_table(3))
+  //   printf("[PEC] internal_regs %x\t%x\t%x\t%x\n", internal_regs(0)(64 * 6 - 1, 64 * 5),
+  //     internal_regs(1)(64 * 6 - 1, 64 * 5), internal_regs(2)(64 * 6 - 1, 64 * 5), internal_regs(3)(64 * 6 - 1, 64 * 5))
+  // }
 
   output.bits.result := internal_regs(3)(64 * 6 - 1, 64 * 5) ^ internal_regs(3)(64 * 2 - 1, 64 * 1)
   output.valid := busy_table(3)

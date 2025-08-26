@@ -14,8 +14,8 @@ class DBChecker extends Module with DBCheckerConst{
 
   // DBTE sram table, 36 bits each
   val dbte_mem = SRAM(dbte_num, UInt(36.W), 2, 1, 0)
-  val qarma_encrypt = Module(new QarmaDummy)
-  val qarma_decrypt = Module(new QarmaDummy)
+  val qarma_encrypt = Module(new QarmaMultiCycle)
+  val qarma_decrypt = Module(new QarmaMultiCycle)
 
   // ctrl module
   val ctrl = Module(new DBCheckerCtrl)
