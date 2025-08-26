@@ -89,6 +89,11 @@ class DBChecker extends Module with DBCheckerConst{
   val w_w_release = RegInit(false.B)
   val w_awaddr_ptr = s_axi_io_rx.aw.bits.addr.asTypeOf(new DBCheckerPtr)
 
+  val r_decrypt_no = RegInit(0.U(1.W)) // serial number for r decryption
+  val w_decrypt_no = RegInit(0.U(1.W)) // serial number for w decryption
+  val cur_decrypt_input_no = RegInit(0.U(1.W)) // serial number for cur decryption input
+  val cur_decrypt_output_no = RegInit(0.U(1.W)) // serial number for cur decryption output
+
 // addr channel(ar/r)
   switch(r_chan_status) {
     is(DBCheckerState.ReadDBTE) {
@@ -115,10 +120,9 @@ class DBChecker extends Module with DBCheckerConst{
           r_sram_mtdt := 0.U
           dbte_mem.readPorts(0).address := dbte_index
           dbte_mem.readPorts(0).enable := true.B
-          when ((w_chan_status =/= DBCheckerState.WaitCheckreq) && 
-                (w_chan_status =/= DBCheckerState.WaitCheckresp)) {
-                  r_chan_status := DBCheckerState.WaitCheckreq
-                  } // lock for decrypt
+          when (w_chan_status =/= DBCheckerState.WaitCheckreq) {
+            r_chan_status := DBCheckerState.WaitCheckreq
+          } // lock for decryption
         }
       }
     }
@@ -130,12 +134,14 @@ class DBChecker extends Module with DBCheckerConst{
       qarma_decrypt.input.valid := true.B
       qarma_decrypt.input.bits.text := Cat(r_araddr_ptr.e_mtdt_hi, Mux(r_sram_mtdt === 0.U, dbte_mem.readPorts(0).data, r_sram_mtdt))
       when (qarma_decrypt.input.ready) {
+        r_decrypt_no := cur_decrypt_input_no
+        cur_decrypt_input_no := cur_decrypt_input_no + 1.U
         r_chan_status := DBCheckerState.WaitCheckresp
         }
     }
     is(DBCheckerState.WaitCheckresp) {
       // receive decrypt response
-      when (qarma_decrypt.output.valid) {
+      when (qarma_decrypt.output.valid && cur_decrypt_output_no === r_decrypt_no) {
         val decrypt_result = qarma_decrypt.output.bits.result.asTypeOf(new DBCheckerMtdt)
         val magic_num_err = (decrypt_result.mn =/= magic_num.U)
         val bnd_base   = Mux(decrypt_result.typ.asBool, 
@@ -155,12 +161,14 @@ class DBChecker extends Module with DBCheckerConst{
           ctrl.err_req_r.bits.mtdt := decrypt_result.asUInt
           when (ctrl.err_req_r.ready) {
               qarma_decrypt.output.ready := true.B
+              cur_decrypt_output_no := cur_decrypt_output_no + 1.U
               r_chan_status := DBCheckerState.Release
             }
         }
         .otherwise {
           // check pass
           qarma_decrypt.output.ready := true.B
+          cur_decrypt_output_no := cur_decrypt_output_no + 1.U
           r_chan_status := DBCheckerState.Release
         }
       }
@@ -229,8 +237,7 @@ class DBChecker extends Module with DBCheckerConst{
           w_sram_mtdt := 0.U
           dbte_mem.readPorts(1).address := dbte_index
           dbte_mem.readPorts(1).enable := true.B
-          when ((r_chan_status =/= DBCheckerState.WaitCheckreq) && 
-                (r_chan_status =/= DBCheckerState.WaitCheckresp)) {
+          when (r_chan_status =/= DBCheckerState.WaitCheckreq) {
                   w_chan_status := DBCheckerState.WaitCheckreq
                   } // lock for decrypt
         }
@@ -243,11 +250,15 @@ class DBChecker extends Module with DBCheckerConst{
       // send decrypt request
       qarma_decrypt.input.valid := true.B
       qarma_decrypt.input.bits.text := Cat(w_awaddr_ptr.e_mtdt_hi, Mux(w_sram_mtdt === 0.U, dbte_mem.readPorts(1).data, w_sram_mtdt))
-      when (qarma_decrypt.input.ready) {w_chan_status := DBCheckerState.WaitCheckresp}
+      when (qarma_decrypt.input.ready) {
+        w_decrypt_no := cur_decrypt_input_no
+        cur_decrypt_input_no := cur_decrypt_input_no + 1.U
+        w_chan_status := DBCheckerState.WaitCheckresp
+        }
     }
     is(DBCheckerState.WaitCheckresp) {
       // receive decrypt response
-      when (qarma_decrypt.output.valid) {
+      when (qarma_decrypt.output.valid && cur_decrypt_output_no === w_decrypt_no) {
         val decrypt_result = qarma_decrypt.output.bits.result.asTypeOf(new DBCheckerMtdt)
         val magic_num_err = (decrypt_result.mn =/= magic_num.U)
         val bnd_base   = Mux(decrypt_result.typ.asBool, 
@@ -266,6 +277,7 @@ class DBChecker extends Module with DBCheckerConst{
           ctrl.err_req_w.bits.info := w_awaddr_ptr.asUInt
           ctrl.err_req_w.bits.mtdt := decrypt_result.asUInt
           when (ctrl.err_req_w.ready) {
+              cur_decrypt_output_no := cur_decrypt_output_no + 1.U
               qarma_decrypt.output.ready := true.B
               w_aw_release := true.B
               w_w_release := true.B
@@ -274,6 +286,7 @@ class DBChecker extends Module with DBCheckerConst{
         }
         .otherwise {
           // check pass
+          cur_decrypt_output_no := cur_decrypt_output_no + 1.U
           qarma_decrypt.output.ready := true.B
           w_aw_release := true.B
           w_w_release := true.B
