@@ -13,6 +13,7 @@ verilog:
 	mkdir -p $(BUILD_DIR)
 	mill -i $(PRJ).runMain Elaborate --target-dir $(BUILD_DIR)
 	sed -i 's/\blogic\b/reg/g' $(BUILD_DIR)/DBChecker.v
+	cp ./playground/src/dbchecker_wrapper.v $(BUILD_DIR)/
 help:
 	mill -i $(PRJ).runMain Elaborate --help
 
@@ -31,10 +32,9 @@ idea:
 clean:
 	-rm -rf $(OUT_DIR) $(BUILD_DIR)
 
-.PHONY: test verilog help reformat checkformat clean
+gen_sim_prj:
+	cd sim_env
+	vivado -mode batch -source dbchecker_test.tcl	
 
-sim:
-	$(call git_commit, "sim RTL") # DO NOT REMOVE THIS LINE!!!
-	@echo "Write this Makefile by yourself."
+.PHONY: test verilog help reformat checkformat clean gen_sim_prj
 
--include ../Makefile

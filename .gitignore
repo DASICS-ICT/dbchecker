@@ -21,3 +21,10 @@ out/
 .idea/
 .idea_modules/
 test_run_dir/
+
+# simulation source
+!sim_env/dbchecker_sim_tb.sv
+!sim_env/dbchecker_sim_tb_behav.wcfg
+!sim_env/dbchecker_test.tcl
+sim_env/dbchecker_test
+sim_env/.Xil
