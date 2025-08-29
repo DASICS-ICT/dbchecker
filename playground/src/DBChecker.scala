@@ -145,13 +145,13 @@ class DBChecker extends Module with DBCheckerConst{
         val decrypt_result = qarma_decrypt.output.bits.result.asTypeOf(new DBCheckerMtdt)
         val magic_num_err = (decrypt_result.mn =/= magic_num.U)
         val bnd_base   = Mux(decrypt_result.typ.asBool, 
-                            Cat(decrypt_result.bnd.asTypeOf(new DBCheckerBndL).limit_base, 0.U(16.W)), 
+                            Cat(decrypt_result.bnd.asTypeOf(new DBCheckerBndL).limit_base, 0.U((36 - (new DBCheckerBndL).limit_base.getWidth).W)), 
                             decrypt_result.bnd.asTypeOf(new DBCheckerBndS).limit_base)
         val bnd_offset = Mux(decrypt_result.typ.asBool, 
                             decrypt_result.bnd.asTypeOf(new DBCheckerBndL).limit_offset, 
                             decrypt_result.bnd.asTypeOf(new DBCheckerBndS).limit_offset)
         val bnd_err = (r_araddr_ptr.access_addr < bnd_base) || (r_araddr_ptr.access_addr > (bnd_base + bnd_offset)) 
-        val bnd_mismatch = decrypt_result.rw.asBool
+        val bnd_mismatch = !decrypt_result.r.asBool
         when (magic_num_err || bnd_err || bnd_mismatch) { // magic_num check
           // magic_num / bnd error
           r_chk_err := true.B
@@ -262,13 +262,13 @@ class DBChecker extends Module with DBCheckerConst{
         val decrypt_result = qarma_decrypt.output.bits.result.asTypeOf(new DBCheckerMtdt)
         val magic_num_err = (decrypt_result.mn =/= magic_num.U)
         val bnd_base   = Mux(decrypt_result.typ.asBool, 
-                            Cat(decrypt_result.bnd.asTypeOf(new DBCheckerBndL).limit_base, 0.U(16.W)), 
+                            Cat(decrypt_result.bnd.asTypeOf(new DBCheckerBndL).limit_base, 0.U((36 - (new DBCheckerBndL).limit_base.getWidth).W)), 
                             decrypt_result.bnd.asTypeOf(new DBCheckerBndS).limit_base)
         val bnd_offset = Mux(decrypt_result.typ.asBool, 
                             decrypt_result.bnd.asTypeOf(new DBCheckerBndL).limit_offset, 
                             decrypt_result.bnd.asTypeOf(new DBCheckerBndS).limit_offset)
         val bnd_err = (w_awaddr_ptr.access_addr < bnd_base) || (w_awaddr_ptr.access_addr > (bnd_base + bnd_offset)) 
-        val bnd_mismatch = !decrypt_result.rw.asBool // out of bound or type mismatch
+        val bnd_mismatch = !decrypt_result.w.asBool // out of bound or type mismatch
         when (magic_num_err || bnd_err || bnd_mismatch) { // magic_num check
           // magic_num / bnd error
           w_chk_err := true.B

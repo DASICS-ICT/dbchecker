@@ -164,7 +164,7 @@ module dbchecker_sim_tb();
             $display("Test 2: Small Buffer Valid Access");
             
             // 构造Small Buffer元数据 (type=0, R/W=1, offset=0x100, base=0x2000)
-            test_metadata = {2'b01, 2'b01, 6'b0, 1'b0, 1'b1, 16'h0100, 36'h2000};
+            test_metadata = {2'b01, 2'b01, 5'b0, 1'b0, 1'b1, 1'b0, 16'h0100, 36'h2000};
             
             // 发送alloc命令
             ctrl_agent.AXI4LITE_WRITE_BURST(
@@ -256,7 +256,7 @@ module dbchecker_sim_tb();
             $display("Test 4: Large Buffer Valid Access");
             
             // 构造Large Buffer元数据 (type=1, R/W=1, offset=0x1000, base=0x100000)
-            test_metadata = {2'b01, 2'b01, 6'b0, 1'b1, 1'b1, 32'h00001000, 20'h10000};
+            test_metadata = {2'b01, 2'b01, 5'b0, 1'b1, 1'b1, 1'b0, 32'h00001000, 20'h10000};
             
             // 发送alloc命令
             ctrl_agent.AXI4LITE_WRITE_BURST(
@@ -348,8 +348,8 @@ module dbchecker_sim_tb();
             $display("Test 6: Permission Check");
             
             // 构造只读Buffer元数据 (type=0, R/W=0, offset=0x100, base=0x3000)
-            test_metadata = {2'b01, 2'b01, 6'b0, 1'b0, 1'b0, 16'h0100, 36'h3000};
-            
+            test_metadata = {2'b01, 2'b01, 5'b0, 1'b0, 1'b0, 1'b0, 16'h0100, 36'h3000};
+
             // 发送alloc命令
             ctrl_agent.AXI4LITE_WRITE_BURST(
                 32'h4000_0008, // chk_cmd地址
@@ -407,7 +407,7 @@ module dbchecker_sim_tb();
             ctrl_agent.AXI4LITE_WRITE_BURST(
                 32'h4000_0008, // chk_cmd地址
                 0, // prot
-                {2'b01, 2'b00, 6'b0, {42'b0, physical_pointer[63:52]}}, // free命令
+                {2'b01, 2'b00, 5'b0, {43'b0, physical_pointer[63:52]}}, // free命令
                 resp
             );
             
@@ -449,8 +449,8 @@ module dbchecker_sim_tb();
             $display("Test 8: Read Operation");
             
             // 分配一个新的缓冲区
-            test_metadata = {2'b01, 2'b01, 6'b0, 1'b0, 1'b1, 16'h0100, 36'h4000};
-            
+            test_metadata = {2'b01, 2'b01, 5'b0, 1'b0, 1'b1, 1'b1, 16'h0100, 36'h4000};
+
             ctrl_agent.AXI4LITE_WRITE_BURST(
                 32'h4000_0008, // chk_cmd地址
                 0, // prot
@@ -467,7 +467,7 @@ module dbchecker_sim_tb();
                 resp
             );
             
-            $display("Allocated buffer for read test - write: 0x%0h", physical_pointer);
+            $display("Allocated buffer for write - read test: 0x%0h", physical_pointer);
             
             // 首先写入一些数据
             write_data = 64'h123456789ABCDEF0;
@@ -489,39 +489,11 @@ module dbchecker_sim_tb();
             );
             
             if (resp !== XIL_AXI_RESP_OKAY) begin
-                $display("ERROR: Write operation failed before read test");
+                $display("ERROR: Write operation failed");
                 test_fail_count++;
                 return;
             end
             
-            ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_0008, // chk_cmd地址
-                0, // prot
-                {2'b01, 2'b00, 6'b0, {42'b0, physical_pointer[63:52]}}, // free命令
-                resp
-            );
-            poll_until_command_done();
-
-            test_metadata = {2'b01, 2'b01, 6'b0, 1'b0, 1'b0, 16'h0100, 36'h4000};
-            
-            ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_0008, // chk_cmd地址
-                0, // prot
-                test_metadata, // alloc命令
-                resp
-            );
-            
-            poll_until_command_done();
-            
-            ctrl_agent.AXI4LITE_READ_BURST(
-                32'h4000_0010, // chk_res地址
-                0, // prot
-                physical_pointer, // 存储物理指针
-                resp
-            );
-            
-            $display("Allocated buffer for read test - write: 0x%0h", physical_pointer);
-
             // 现在读取数据
             master_agent.AXI4_READ_BURST(
                 id,
@@ -579,8 +551,8 @@ module dbchecker_sim_tb();
             $display("Test 9: Metadata Tampering");
             
             // 分配一个新的缓冲区
-            test_metadata = {2'b01, 2'b01, 6'b0, 1'b0, 1'b1, 16'h0100, 36'h5000};
-            
+            test_metadata = {2'b01, 2'b01, 5'b0, 1'b0, 1'b1, 1'b0, 16'h0100, 36'h5000};
+
             ctrl_agent.AXI4LITE_WRITE_BURST(
                 32'h4000_0008, // chk_cmd地址
                 0, // prot
@@ -631,7 +603,7 @@ module dbchecker_sim_tb();
             $display("Test 10: Multiple Allocation and Free");
             // 分配多个缓冲区
             for (int i = 0; i < 4; i++) begin
-                test_metadata = {2'b01, 2'b01, 6'b0, 1'b0, 1'b1, 16'h0100, 36'h6000 + i*36'h100};
+                test_metadata = {2'b01, 2'b01, 5'b0, 1'b0, 1'b1, 1'b0, 16'h0100, 36'h6000 + i*36'h100};
                 
                 ctrl_agent.AXI4LITE_WRITE_BURST(
                     32'h4000_0008, // chk_cmd地址

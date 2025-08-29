@@ -117,7 +117,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
 
   // DBTE alloc reg
   val dbte_alloc_state = RegInit(DBTEAllocState.waitEncryptReq)
-  val dbte_alloc_id = RegInit(0.U(4.W))
+  val dbte_alloc_id = RegInit(0.U((new DBCheckerMtdt).id.getWidth.W))
   
   val cmd_reg = regFile(chk_cmd)
   val cmd_reg_struct = cmd_reg.asTypeOf(new DBCheckerCommand)
@@ -134,7 +134,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   encrypt_req.bits.tweak := "hDEADBEEFDEADBEEF".U
   encrypt_req.bits.actual_round := 3.U
 
-  encrypt_req.bits.text := Cat(magic_num.U(6.W), dbte_alloc_id, cmd_reg_struct.imm(53, 0)) // Build a new DBTE entry
+  encrypt_req.bits.text := Cat(magic_num.U((new DBCheckerMtdt).mn.getWidth.W), dbte_alloc_id, cmd_reg_struct.imm) // Build a new DBTE entry
   encrypt_req.bits.keyh := regFile(chk_keyh)
   encrypt_req.bits.keyl := regFile(chk_keyl)
 
@@ -145,10 +145,10 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
       is (cmd_op_free) { // free
         // Free the DBTE entry
         when (cmd_reg_struct.imm >= dbte_num.U) { // illegal cmd
-          cmd_reg := Cat(cmd_status_error, cmd_reg(61, 0)) // clear v
+          cmd_reg := Cat(cmd_status_error, cmd_reg(63 - cmd_status_error.getWidth, 0)) // clear v
         }
         .otherwise{
-          cmd_reg := Cat(cmd_status_ok, cmd_reg(61, 0)) // clear v
+          cmd_reg := Cat(cmd_status_ok, cmd_reg(63 - cmd_status_ok.getWidth, 0)) // clear v
           val dbte_index = cmd_reg_struct.imm(log2Up(dbte_num) - 1, 0)
           dbte_v_bitmap(dbte_index) := false.B
         }
@@ -167,19 +167,19 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
               val e_mtdt = encrypt_resp.bits.result.asTypeOf(new DBCheckerMtdt)
               when (!dbte_v_bitmap(e_mtdt.get_index)) { // alloc success
                 dbte_alloc_id := 0.U
-                cmd_reg := Cat(cmd_status_ok, cmd_reg(61, 0)) // clear v
-                val fake_mtdt = Cat(0.U(10.W),cmd_reg_struct.imm(53, 0)).asTypeOf(new DBCheckerMtdt)
-                res_reg := e_mtdt.get_ptr(Mux(fake_mtdt.typ.asBool, 
-                                              Cat(fake_mtdt.bnd.asTypeOf(new DBCheckerBndL).limit_base,0.U(16.W)), 
+                cmd_reg := Cat(cmd_status_ok, cmd_reg(63 - cmd_status_ok.getWidth, 0)) // clear v
+                val fake_mtdt = cmd_reg_struct.imm.asTypeOf(UInt(64.W)).asTypeOf(new DBCheckerMtdt)
+                res_reg := e_mtdt.get_ptr(Mux(fake_mtdt.typ.asBool,
+                                              Cat(fake_mtdt.bnd.asTypeOf(new DBCheckerBndL).limit_base,0.U((36 - (new DBCheckerBndL).limit_base.getWidth).W)),
                                               fake_mtdt.bnd.asTypeOf(new DBCheckerBndS).limit_base)) // store the result
                 dbte_v_bitmap(e_mtdt.get_index) := true.B
                 dbte_sram_w.address := e_mtdt.get_index
                 dbte_sram_w.enable  := true.B
                 dbte_sram_w.data    := e_mtdt.get_dbte
               } .otherwise {
-                when (dbte_alloc_id === 15.U) { // alloc fail, corresponding dbtes are all full
+                when (dbte_alloc_id === (1.U << dbte_alloc_id.getWidth) - 1.U) { // alloc fail, corresponding dbtes are all full
                   dbte_alloc_id := 0.U
-                  cmd_reg := Cat(cmd_status_error, cmd_reg(61, 0)) // clear v
+                  cmd_reg := Cat(cmd_status_error, cmd_reg(63 - cmd_status_error.getWidth, 0)) // clear v
                 }
                 .otherwise { // change id, retry
                   dbte_alloc_id := dbte_alloc_id + 1.U
@@ -192,7 +192,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
 
       }
       is (cmd_op_clr_err) { // clear err counter
-        cmd_reg := Cat(cmd_status_ok, cmd_reg(61, 0)) // clear v
+        cmd_reg := Cat(cmd_status_ok, cmd_reg(63 - cmd_status_ok.getWidth, 0)) // clear v
         err_cnt_reg  := 0.U
         err_info_reg := 0.U
         err_mtdt_reg := 0.U
@@ -202,11 +202,13 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
 
   // error reg handler
 
-  val next_cnt = Wire(Vec(4, UInt(15.W)))
+  val next_cnt = Wire((new DBCheckerErrCnt).cnt.cloneType)
+  val cnt_max_val = (1.U << next_cnt(0).getWidth) - 1.U
+  
   for (i <- 0 until 4) {
-    next_cnt(i) := Mux(err_cnt_reg_struct.cnt(i) <= "h7fff".U, 
+    next_cnt(i) := Mux(err_cnt_reg_struct.cnt(i) <= cnt_max_val, 
                       (err_cnt_reg_struct.cnt(i) + (err_req_r.valid && err_req_r.bits.typ === i.U).asUInt + (err_req_w.valid && err_req_w.bits.typ === i.U).asUInt),
-                      "h7fff".U(15.W))
+                      cnt_max_val)
   }
   val err_latest = Mux(err_req_r.valid, 1.U << err_req_r.bits.typ, 1.U << err_req_w.bits.typ)
   val cnt_enable = !(cmd_reg_struct.status === cmd_status_req && cmd_reg_struct.op === cmd_op_clr_err)

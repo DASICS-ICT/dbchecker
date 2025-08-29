@@ -38,30 +38,26 @@ trait DBCheckerConst {
     def cmd_status_ok      = 2.U(2.W)
     def cmd_status_error   = 3.U(2.W)
 
-    def mtdt_typ_offset = 53.U
     def mtdt_typ_s = 0.U(1.W)
     def mtdt_typ_l = 1.U(1.W)  
-
-    def mtdt_rw_r = 0.U(1.W)
-    def mtdt_rw_w = 1.U(1.W)
 
     def err_bnd_farea  = 0.U(2.W)
     def err_bnd_ftype  = 1.U(2.W)
     def err_mtdt_finv  = 2.U(2.W)
     def err_mtdt_fmn   = 3.U(2.W)
-
 }
 
-  // --------------------------------------------------------------------------------------------------
-  // |magic_num(6)|id(4)|type(1)|R/W(1)|limit_offset(s:16, l:32)|limit_base(s:36, l:20(low 16 bit = 0))|
-  // --------------------------------------------------------------------------------------------------
+  // ------------------------------------------------------------------------------------------------------
+  // |magic_num(6)|id(3)|type(1)|w(1)|r(1)|limit_offset(s:16, l:32)|limit_base(s:36, l:20(low 16 bit = 0))|
+  // ------------------------------------------------------------------------------------------------------
 
 
 class DBCheckerMtdt extends Bundle with DBCheckerConst{
     val mn           = UInt(6.W)
-    val id           = UInt(4.W)
+    val id           = UInt(3.W)
     val typ          = UInt(1.W)
-    val rw           = UInt(1.W) // 0:r 1:w
+    val w            = UInt(1.W)
+    val r            = UInt(1.W)
     val bnd          = UInt(52.W)
 
     def get_index: UInt = {
@@ -110,8 +106,8 @@ class DBCheckerErrReq extends Bundle {
 class DBCheckerCommand extends Bundle {
     val status = UInt(2.W) 
     val op  = UInt(2.W)
-    val pad = UInt(6.W)
-    val imm = UInt(54.W)
+    val pad = UInt(5.W)
+    val imm = UInt(55.W)
 }
 
   // ------------------------------------
