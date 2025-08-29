@@ -33,8 +33,10 @@ clean:
 	-rm -rf $(OUT_DIR) $(BUILD_DIR)
 
 gen_sim_prj:
-	cd sim_env
-	vivado -mode batch -source dbchecker_test.tcl	
+	cd sim_env && vivado -mode batch -source dbchecker_test.tcl	
 
-.PHONY: test verilog help reformat checkformat clean gen_sim_prj
+clean_sim_prj:
+	-rm -rf sim_env/dbchecker_test sim_env/.Xil sim_env/vivado*
+
+.PHONY: test verilog help reformat checkformat clean gen_sim_prj clean_sim_prj
 
