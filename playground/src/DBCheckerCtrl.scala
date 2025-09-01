@@ -6,7 +6,7 @@ import axi._
 
 class DBCheckerCtrl extends Module with DBCheckerConst {
   // io
-  val s_axil = IO(new AxiLiteSlave(addrWidth,64))
+  val s_axil = IO(new AxiLiteSlave(32,64))
   val ctrl_reg = IO(Output(Vec(RegNum, UInt(64.W))))
   val encrypt_req = IO(Decoupled(new QarmaInputBundle))
   val encrypt_resp = IO(Flipped(Decoupled(new QarmaOutputBundle)))
@@ -23,8 +23,8 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   val state = RegInit(AXILiteState.Idle)
   
   // Internal signals
-  val readAddrReg  = Reg(UInt(addrWidth.W))
-  val writeAddrReg = Reg(UInt(addrWidth.W))
+  val readAddrReg  = Reg(UInt(32.W))
+  val writeAddrReg = Reg(UInt(32.W))
   val writeDataReg = Reg(UInt(64.W))
   val writeStrbReg = Reg(UInt(8.W))
   // Default outputs
@@ -144,12 +144,12 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
     switch (cmd_reg_struct.op) {
       is (cmd_op_free) { // free
         // Free the DBTE entry
-        when (cmd_reg_struct.imm >= dbte_num.U) { // illegal cmd
+        when (cmd_reg_struct.imm((64 - 36 - 1), (64 - 36) - log2Up(dbte_num)) >= dbte_num.U) { // illegal cmd
           cmd_reg := Cat(cmd_status_error, cmd_reg(63 - cmd_status_error.getWidth, 0)) // clear v
         }
         .otherwise{
           cmd_reg := Cat(cmd_status_ok, cmd_reg(63 - cmd_status_ok.getWidth, 0)) // clear v
-          val dbte_index = cmd_reg_struct.imm(log2Up(dbte_num) - 1, 0)
+          val dbte_index = cmd_reg_struct.imm((64 - 36 - 1), (64 - 36) - log2Up(dbte_num))
           dbte_v_bitmap(dbte_index) := false.B
         }
       }

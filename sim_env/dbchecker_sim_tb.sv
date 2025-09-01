@@ -407,7 +407,7 @@ module dbchecker_sim_tb();
             ctrl_agent.AXI4LITE_WRITE_BURST(
                 32'h4000_0008, // chk_cmd地址
                 0, // prot
-                {2'b01, 2'b00, 5'b0, {43'b0, physical_pointer[63:52]}}, // free命令
+                {2'b01, 2'b00, 5'b0, {27'b0, physical_pointer[63:36]}}, // free命令
                 resp
             );
             
@@ -656,7 +656,7 @@ module dbchecker_sim_tb();
             ctrl_agent.AXI4LITE_WRITE_BURST(
                 32'h4000_0008, // chk_cmd地址
                 0, // prot
-                {2'b01, 2'b00, 6'b0, {42'b0, physical_ptr_array[i][63:52]}}, // free命令
+                {2'b01, 2'b00, 6'b0, {27'b0, physical_ptr_array[i][63:36]}}, // free命令
                 resp
             );
             poll_until_command_done();

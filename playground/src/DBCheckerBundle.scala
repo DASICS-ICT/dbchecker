@@ -6,7 +6,6 @@ import chisel3.util._
 trait DBCheckerConst {
   val debug = true
   val RegNum = 8 // total register num
-  val addrWidth = 32 // datawidth = 64
 
   val magic_num = 0x2a // 101010
   val dbte_num  = 4096
