@@ -24,13 +24,13 @@ module dbchecker_wrapper (
   input         s_axil_ctrl_bready,
   output [1:0]  s_axil_ctrl_bresp,
   output        s_axil_ctrl_bvalid,
-  output [63:0] s_axil_ctrl_rdata,
+  output [31:0] s_axil_ctrl_rdata,
   input         s_axil_ctrl_rready,
   output [1:0]  s_axil_ctrl_rresp,
   output        s_axil_ctrl_rvalid,
-  input  [63:0] s_axil_ctrl_wdata,
+  input  [31:0] s_axil_ctrl_wdata,
   output        s_axil_ctrl_wready,
-  input  [7:0]  s_axil_ctrl_wstrb,
+  input  [3:0]  s_axil_ctrl_wstrb,
   input         s_axil_ctrl_wvalid,
 
 

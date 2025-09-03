@@ -10,7 +10,7 @@ class DBChecker extends Module with DBCheckerConst{
   val s_axi_io_tx = IO(new AxiSlave(32, 32))
   val m_axi_io_rx = IO(new AxiMaster(36, 128))
   val s_axi_io_rx = IO(new AxiSlave(64, 128))
-  val s_axil_ctrl = IO(new AxiLiteSlave(32, 64))
+  val s_axil_ctrl = IO(new AxiLiteSlave(32, 32))
 
   // DBTE sram table, 36 bits each
   val dbte_mem = SRAM(dbte_num, UInt(36.W), 2, 1, 0)

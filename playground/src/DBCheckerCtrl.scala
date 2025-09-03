@@ -6,7 +6,7 @@ import axi._
 
 class DBCheckerCtrl extends Module with DBCheckerConst {
   // io
-  val s_axil = IO(new AxiLiteSlave(32,64))
+  val s_axil = IO(new AxiLiteSlave(32,32))
   val ctrl_reg = IO(Output(Vec(RegNum, UInt(64.W))))
   val encrypt_req = IO(Decoupled(new QarmaInputBundle))
   val encrypt_resp = IO(Flipped(Decoupled(new QarmaOutputBundle)))
@@ -25,8 +25,8 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   // Internal signals
   val readAddrReg  = Reg(UInt(32.W))
   val writeAddrReg = Reg(UInt(32.W))
-  val writeDataReg = Reg(UInt(64.W))
-  val writeStrbReg = Reg(UInt(8.W))
+  val writeDataReg = Reg(UInt(32.W))
+  val writeStrbReg = Reg(UInt(4.W))
   // Default outputs
   s_axil.aw.ready     := false.B
   s_axil.w.ready      := false.B
@@ -61,14 +61,14 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
       s_axil.r.valid := true.B
       // Address decoding for read
       val index = readAddrReg(log2Up(RegNum) + 2, 3)
-      when (index < RegNum.U && readAddrReg(2, 0) === 0.U) {
+      when (index < RegNum.U && readAddrReg(1, 0) === 0.U) {
         // read logic
         if (debug) {
-            s_axil.r.bits.data := regFile(index)
+            s_axil.r.bits.data := Mux(readAddrReg(2),regFile(index)(63,32),regFile(index)(31,0))
         }
         else {
           when (!(index === chk_keyl.U || index === chk_keyh.U)) {
-            s_axil.r.bits.data := regFile(index)
+            s_axil.r.bits.data := Mux(readAddrReg(2),regFile(index)(63,32),regFile(index)(31,0))
           }
         }
       }.otherwise {
@@ -82,13 +82,15 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
     is(AXILiteState.writeData) {
       // Perform write operations
       val index = writeAddrReg(log2Up(RegNum) + 2, 3)  // aligned
-      when(index < RegNum.U && writeAddrReg(2, 0) === 0.U) {
+      when(index < RegNum.U && writeAddrReg(1, 0) === 0.U) {
         // Byte-wise write using w.bits.strb
         // write logic
-        val wmask = Cat((0 until 8).reverse.map(i => Fill(8, writeStrbReg(i))))
+        val wmask = Cat((0 until 4).reverse.map(i => Fill(8, writeStrbReg(i))))
         when ((index === chk_cmd.U && regFile(index).asTypeOf(new DBCheckerCommand).status =/= cmd_status_req) || // when the command is not valid
                index === chk_en.U || index === chk_keyl.U || index === chk_keyh.U) {
-          regFile(index) := (regFile(index) & ~wmask) | (writeDataReg & wmask)
+          regFile(index) := Mux(writeAddrReg(2),
+                                Cat((regFile(index)(63,32) & ~wmask) | (writeDataReg & wmask),regFile(index)(31,0)),
+                                Cat(regFile(index)(63,32),(regFile(index)(31,0) & ~wmask) | (writeDataReg & wmask)))
         }
       }.otherwise {
         s_axil.b.bits.resp := 2.U  // SLVERR for invalid address

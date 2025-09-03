@@ -10,7 +10,7 @@ trait DBCheckerConst {
   val magic_num = 0x2a // 101010
   val dbte_num  = 4096
   
-  // reg index (actual addr is 8 byte aligned)
+  // reg index (actual addr is 8 byte aligned, r/w lo-hi)
   // checker enable register  (0x0, RW) : checker enable / disable register; reserved
   val chk_en        = 0x0 // 0x00
   // checker command register (0x1, R, W only when not valid) : used to alloc / free metadata
