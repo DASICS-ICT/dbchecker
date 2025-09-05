@@ -412,7 +412,7 @@ proc cr_bd_test_design { parentCell } {
   # Create instance: axi_vip_output, and set properties
   set axi_vip_output [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_vip:1.1 axi_vip_output ]
   set_property -dict [ list \
-   CONFIG.ADDR_WIDTH {36} \
+   CONFIG.ADDR_WIDTH {32} \
    CONFIG.DATA_WIDTH {128} \
    CONFIG.INTERFACE_MODE {SLAVE} \
    CONFIG.PROTOCOL {AXI4} \

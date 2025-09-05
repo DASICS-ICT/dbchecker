@@ -7,7 +7,7 @@ trait DBCheckerConst {
   val debug = true
   val RegNum = 8 // total register num
 
-  val magic_num = 0x2a // 101010
+  val magic_num = 0xa // 1010
   val dbte_num  = 4096
   
   // reg index (actual addr is 8 byte aligned, r/w lo-hi)
@@ -46,38 +46,39 @@ trait DBCheckerConst {
     def err_mtdt_fmn   = 3.U(2.W)
 }
 
-  // ------------------------------------------------------------------------------------------------------
-  // |magic_num(6)|id(3)|type(1)|w(1)|r(1)|limit_offset(s:16, l:32)|limit_base(s:36, l:20(low 16 bit = 0))|
-  // ------------------------------------------------------------------------------------------------------
+  // ------------------------------------------------------------------------------------------------------------------
+  // |magic_num(4)|id(8)|reservec(1)|type(1)|w(1)|r(1)|limit_offset(s:16, l:32)|limit_base(s:32, l:16(low 16 bit = 0))|
+  // ------------------------------------------------------------------------------------------------------------------
 
 
 class DBCheckerMtdt extends Bundle with DBCheckerConst{
-    val mn           = UInt(6.W)
-    val id           = UInt(3.W)
+    val mn           = UInt(4.W)
+    val id           = UInt(8.W)
+    val reserved     = UInt(1.W)
     val typ          = UInt(1.W)
     val w            = UInt(1.W)
     val r            = UInt(1.W)
-    val bnd          = UInt(52.W)
+    val bnd          = UInt(48.W)
 
     def get_index: UInt = {
         this.asUInt(63, 64 - log2Up(dbte_num))
     }
     def get_ptr(base: UInt): UInt = {
-        Cat(this.asUInt(63, 36), base)
+        Cat(this.asUInt(63, 32), base)
     }
     def get_dbte: UInt = {
-        this.asUInt(35, 0)
+        this.asUInt(31, 0)
     }
 }
 
 class DBCheckerBndS extends Bundle {
     val limit_offset = UInt(16.W)
-    val limit_base   = UInt(36.W)
+    val limit_base   = UInt(32.W)
 }
 
 class DBCheckerBndL extends Bundle {
     val limit_offset = UInt(32.W)
-    val limit_base   = UInt(20.W)
+    val limit_base   = UInt(16.W)
 }
 
   // ---------------------------------------------------
@@ -99,23 +100,23 @@ class DBCheckerErrReq extends Bundle {
 }
 
   // -----------------------------------------------------------------------------------------------------------
-  // |status(2)|operation(0:free 1:alloc 2:clr_err)|0...0|E(metadata)_index(if free) / metadata[53:0] (if alloc)|
+  // |status(2)|operation(0:free 1:alloc 2:clr_err)|0...0|E(metadata)_index(if free) / metadata[51:0] (if alloc)|
   // -----------------------------------------------------------------------------------------------------------
 
 class DBCheckerCommand extends Bundle {
     val status = UInt(2.W) 
     val op  = UInt(2.W)
-    val pad = UInt(5.W)
-    val imm = UInt(55.W)
+    val pad = UInt(8.W)
+    val imm = UInt(52.W)
 }
 
   // ------------------------------------
-  // |E(metadata)[63:36]|access_addr(36)|
+  // |E(metadata)[63:32]|access_addr(32)|
   // ------------------------------------
 
 class DBCheckerPtr extends Bundle with DBCheckerConst{
-    val e_mtdt_hi = UInt(28.W)
-    val access_addr = UInt(36.W)
+    val e_mtdt_hi = UInt(32.W)
+    val access_addr = UInt(32.W)
     def get_index: UInt = {
         this.asUInt(63, 64 - log2Up(dbte_num))
     }

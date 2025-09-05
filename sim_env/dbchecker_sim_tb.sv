@@ -181,7 +181,7 @@ module dbchecker_sim_tb();
             $display("Test 2: Small Buffer Valid Access");
             
             // 构造Small Buffer元数据 (type=0, R/W=1, offset=0x100, base=0x2000)
-            test_metadata = {2'b01, 2'b01, 5'b0, 1'b0, 1'b1, 1'b0, 16'h0100, 36'h2000};
+            test_metadata = {2'b01, 2'b01, 9'b0, 1'b0, 1'b1, 1'b0, 16'h0100, 32'h2000};
             
             // 发送alloc命令
             ctrl_agent.AXI4LITE_WRITE_BURST(
@@ -222,7 +222,7 @@ module dbchecker_sim_tb();
             // 测试有效范围内的写入
             master_agent.AXI4_WRITE_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 36'h100, // 基地址+偏移量(在范围内)
+                {physical_pointer_hi, physical_pointer_lo} + 32'h100, // 基地址+偏移量(在范围内)
                 len,
                 size,
                 burst,
@@ -258,7 +258,7 @@ module dbchecker_sim_tb();
             // 尝试越界写入 (基地址+偏移量+1，超出范围)
             master_agent.AXI4_WRITE_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 36'h201, // 超出范围地址
+                {physical_pointer_hi, physical_pointer_lo} + 32'h201, // 超出范围地址
                 len,
                 size,
                 burst,
@@ -285,7 +285,7 @@ module dbchecker_sim_tb();
             $display("Test 4: Large Buffer Valid Access");
             
             // 构造Large Buffer元数据 (type=1, R/W=1, offset=0x1000, base=0x100000)
-            test_metadata = {2'b01, 2'b01, 5'b0, 1'b1, 1'b1, 1'b0, 32'h00001000, 20'h10000};
+            test_metadata = {2'b01, 2'b01, 9'b0, 1'b1, 1'b1, 1'b0, 32'h00001000, 16'h1000};
             
             // 发送alloc命令
             ctrl_agent.AXI4LITE_WRITE_BURST(
@@ -326,7 +326,7 @@ module dbchecker_sim_tb();
             // 测试有效范围内的写入
             master_agent.AXI4_WRITE_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 36'h1000, // 基地址+偏移量(在范围内)
+                {physical_pointer_hi, physical_pointer_lo} + 32'h1000, // 基地址+偏移量(在范围内)
                 len,
                 size,
                 burst,
@@ -362,7 +362,7 @@ module dbchecker_sim_tb();
             // 尝试越界写入 (基地址+偏移量+0x1001，超出范围)
             master_agent.AXI4_WRITE_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 36'h2001, // 超出范围地址
+                {physical_pointer_hi, physical_pointer_lo} + 32'h2001, // 超出范围地址
                 len,
                 size,
                 burst,
@@ -389,7 +389,7 @@ module dbchecker_sim_tb();
             $display("Test 6: Permission Check");
             
             // 构造只读Buffer元数据 (type=0, R/W=0, offset=0x100, base=0x3000)
-            test_metadata = {2'b01, 2'b01, 5'b0, 1'b0, 1'b0, 1'b0, 16'h0100, 36'h3000};
+            test_metadata = {2'b01, 2'b01, 9'b0, 1'b0, 1'b0, 1'b0, 16'h0100, 32'h3000};
 
             // 发送alloc命令
             ctrl_agent.AXI4LITE_WRITE_BURST(
@@ -430,7 +430,7 @@ module dbchecker_sim_tb();
             // 尝试写入只读缓冲区
             master_agent.AXI4_WRITE_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 36'h50, // 在范围内的地址
+                {physical_pointer_hi, physical_pointer_lo} + 32'h50, // 在范围内的地址
                 len,
                 size,
                 burst,
@@ -456,8 +456,8 @@ module dbchecker_sim_tb();
         begin
             $display("Test 7: Free Operation");
             
-            // 释放之前分配的缓冲区(使用最后一个物理指针的高28位作为index)
-            test_metadata = {2'b01, 2'b00, 5'b0, {27'b0, physical_pointer_hi[31:4]}};
+            // 释放之前分配的缓冲区(使用最后一个物理指针的高32位作为index)
+            test_metadata = {2'b01, 2'b00, 8'b0, {20'b0, physical_pointer_hi}};
 
             ctrl_agent.AXI4LITE_WRITE_BURST(
                 32'h4000_0008, // chk_cmd地址
@@ -483,7 +483,7 @@ module dbchecker_sim_tb();
             // 尝试访问已释放的缓冲区
             master_agent.AXI4_WRITE_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 36'h50, // 在范围内的地址
+                {physical_pointer_hi, physical_pointer_lo} + 32'h50, // 在范围内的地址
                 len,
                 size,
                 burst,
@@ -510,7 +510,7 @@ module dbchecker_sim_tb();
             $display("Test 8: Read Operation");
             
             // 分配一个新的缓冲区
-            test_metadata = {2'b01, 2'b01, 5'b0, 1'b0, 1'b1, 1'b1, 16'h0100, 36'h4000};
+            test_metadata = {2'b01, 2'b01, 9'b0, 1'b0, 1'b1, 1'b1, 16'h0100, 32'h4000};
 
             ctrl_agent.AXI4LITE_WRITE_BURST(
                 32'h4000_0008, // chk_cmd地址
@@ -548,7 +548,7 @@ module dbchecker_sim_tb();
             write_data = 64'h123456789ABCDEF0;
             master_agent.AXI4_WRITE_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 36'h50, // 在范围内的地址
+                {physical_pointer_hi, physical_pointer_lo} + 32'h50, // 在范围内的地址
                 len,
                 size,
                 burst,
@@ -572,7 +572,7 @@ module dbchecker_sim_tb();
             // 现在读取数据
             master_agent.AXI4_READ_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 36'h50, // 在范围内的地址
+                {physical_pointer_hi, physical_pointer_lo} + 32'h50, // 在范围内的地址
                 len,
                 size,
                 burst,
@@ -599,7 +599,7 @@ module dbchecker_sim_tb();
             // 测试越界读取
             master_agent.AXI4_READ_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 36'h201, // 超出范围地址
+                {physical_pointer_hi, physical_pointer_lo} + 32'h201, // 超出范围地址
                 len,
                 size,
                 burst,
@@ -626,7 +626,7 @@ module dbchecker_sim_tb();
             $display("Test 9: Metadata Tampering");
             
             // 分配一个新的缓冲区
-            test_metadata = {2'b01, 2'b01, 5'b0, 1'b0, 1'b1, 1'b0, 16'h0100, 36'h5000};
+            test_metadata = {2'b01, 2'b01, 9'b0, 1'b0, 1'b1, 1'b0, 16'h0100, 32'h5000};
 
             ctrl_agent.AXI4LITE_WRITE_BURST(
                 32'h4000_0008, // chk_cmd地址
@@ -665,7 +665,7 @@ module dbchecker_sim_tb();
             write_data = 64'hFEDCBA9876543210;
             master_agent.AXI4_WRITE_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 40'h1000000000 + 36'h50, // 在范围内的地址
+                {physical_pointer_hi, physical_pointer_lo} + 40'h1000000000 + 32'h50, // 在范围内的地址
                 len,
                 size,
                 burst,
@@ -692,7 +692,7 @@ module dbchecker_sim_tb();
             $display("Test 10: Multiple Allocation and Free");
             // 分配多个缓冲区
             for (int i = 0; i < 4; i++) begin
-                test_metadata = {2'b01, 2'b01, 5'b0, 1'b0, 1'b1, 1'b0, 16'h0100, 36'h6000 + i*36'h100};
+                test_metadata = {2'b01, 2'b01, 9'b0, 1'b0, 1'b1, 1'b0, 16'h0100, 32'h6000 + i*32'h100};
                 
             ctrl_agent.AXI4LITE_WRITE_BURST(
                 32'h4000_0008, // chk_cmd地址
@@ -730,7 +730,7 @@ module dbchecker_sim_tb();
                 write_data = 64'hA0A0A0A0A0A0A0A0 + i;
                 master_agent.AXI4_WRITE_BURST(
                     id,
-                    {physical_ptr_array[2 * i + 1], physical_ptr_array[2 * i]} + 36'h50, // 在范围内的地址
+                    {physical_ptr_array[2 * i + 1], physical_ptr_array[2 * i]} + 32'h50, // 在范围内的地址
                     len,
                     size,
                     burst,
@@ -857,7 +857,7 @@ module dbchecker_sim_tb();
             write_data = 64'hD1D1D1D1D1D1D1D1;
             master_agent.AXI4_WRITE_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 36'h50, // 在范围内的地址
+                {physical_pointer_hi, physical_pointer_lo} + 32'h50, // 在范围内的地址
                 len,
                 size,
                 burst,

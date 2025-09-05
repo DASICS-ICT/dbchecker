@@ -8,12 +8,12 @@ import os.truncate
 class DBChecker extends Module with DBCheckerConst{
   val m_axi_io_tx = IO(new AxiMaster(32, 32))
   val s_axi_io_tx = IO(new AxiSlave(32, 32))
-  val m_axi_io_rx = IO(new AxiMaster(36, 128))
+  val m_axi_io_rx = IO(new AxiMaster(32, 128))
   val s_axi_io_rx = IO(new AxiSlave(64, 128))
   val s_axil_ctrl = IO(new AxiLiteSlave(32, 32))
 
-  // DBTE sram table, 36 bits each
-  val dbte_mem = SRAM(dbte_num, UInt(36.W), 2, 1, 0)
+  // DBTE sram table, 32 bits each
+  val dbte_mem = SRAM(dbte_num, UInt(32.W), 2, 1, 0)
   val qarma_encrypt = Module(new QarmaMultiCycle)
   val qarma_decrypt = Module(new QarmaMultiCycle)
 
@@ -29,7 +29,7 @@ class DBChecker extends Module with DBCheckerConst{
 
 // TODO: rx direction check logic
   // ring buffer
-  // val rx_rb = Module(new AXIRingBuffer(36, 128, 16))
+  // val rx_rb = Module(new AXIRingBuffer(32, 128, 16))
 
   // m_axi_io_rx <> rx_rb.m_axi
   // s_axi_io_rx <> rx_rb.s_axi
@@ -57,7 +57,7 @@ class DBChecker extends Module with DBCheckerConst{
 
   s_axi_io_rx.ar.ready := false.B
   m_axi_io_rx.ar.valid := false.B
-  m_axi_io_rx.ar.bits := 0.U.asTypeOf(new AxiAddr(36))
+  m_axi_io_rx.ar.bits := 0.U.asTypeOf(new AxiAddr(32))
 
   m_axi_io_rx.r.ready := false.B
   s_axi_io_rx.r.valid := false.B
@@ -65,7 +65,7 @@ class DBChecker extends Module with DBCheckerConst{
 
   s_axi_io_rx.aw.ready := false.B
   m_axi_io_rx.aw.valid := false.B
-  m_axi_io_rx.aw.bits := 0.U.asTypeOf(new AxiAddr(36))
+  m_axi_io_rx.aw.bits := 0.U.asTypeOf(new AxiAddr(32))
 
   s_axi_io_rx.w.ready := false.B
   m_axi_io_rx.w.valid := false.B
@@ -77,13 +77,13 @@ class DBChecker extends Module with DBCheckerConst{
 
 
   val r_chan_status = RegInit(DBCheckerState.ReadDBTE) 
-  val r_sram_mtdt = RegInit(0.U(36.W))
+  val r_sram_mtdt = RegInit(0.U(32.W))
   val r_chk_err = RegInit(false.B)
   val r_araddr_ptr = s_axi_io_rx.ar.bits.addr.asTypeOf(new DBCheckerPtr)
 
 
   val w_chan_status = RegInit(DBCheckerState.ReadDBTE) 
-  val w_sram_mtdt = RegInit(0.U(36.W))
+  val w_sram_mtdt = RegInit(0.U(32.W))
   val w_chk_err = RegInit(false.B)
   val w_aw_release = RegInit(false.B)
   val w_w_release = RegInit(false.B)
@@ -145,7 +145,7 @@ class DBChecker extends Module with DBCheckerConst{
         val decrypt_result = qarma_decrypt.output.bits.result.asTypeOf(new DBCheckerMtdt)
         val magic_num_err = (decrypt_result.mn =/= magic_num.U)
         val bnd_base   = Mux(decrypt_result.typ.asBool, 
-                            Cat(decrypt_result.bnd.asTypeOf(new DBCheckerBndL).limit_base, 0.U((36 - (new DBCheckerBndL).limit_base.getWidth).W)), 
+                            Cat(decrypt_result.bnd.asTypeOf(new DBCheckerBndL).limit_base, 0.U((32 - (new DBCheckerBndL).limit_base.getWidth).W)), 
                             decrypt_result.bnd.asTypeOf(new DBCheckerBndS).limit_base)
         val bnd_offset = Mux(decrypt_result.typ.asBool, 
                             decrypt_result.bnd.asTypeOf(new DBCheckerBndL).limit_offset, 
@@ -180,7 +180,7 @@ class DBChecker extends Module with DBCheckerConst{
         .otherwise{
           m_axi_io_rx.ar.valid := s_axi_io_rx.ar.valid
           m_axi_io_rx.ar.bits  := s_axi_io_rx.ar.bits
-          m_axi_io_rx.ar.bits.addr := s_axi_io_rx.ar.bits.addr(35, 0)
+          m_axi_io_rx.ar.bits.addr := s_axi_io_rx.ar.bits.addr(31, 0)
           s_axi_io_rx.ar.ready := m_axi_io_rx.ar.ready
         }
         when (s_axi_io_rx.ar.valid && s_axi_io_rx.ar.ready) {
@@ -262,7 +262,7 @@ class DBChecker extends Module with DBCheckerConst{
         val decrypt_result = qarma_decrypt.output.bits.result.asTypeOf(new DBCheckerMtdt)
         val magic_num_err = (decrypt_result.mn =/= magic_num.U)
         val bnd_base   = Mux(decrypt_result.typ.asBool, 
-                            Cat(decrypt_result.bnd.asTypeOf(new DBCheckerBndL).limit_base, 0.U((36 - (new DBCheckerBndL).limit_base.getWidth).W)), 
+                            Cat(decrypt_result.bnd.asTypeOf(new DBCheckerBndL).limit_base, 0.U((32 - (new DBCheckerBndL).limit_base.getWidth).W)), 
                             decrypt_result.bnd.asTypeOf(new DBCheckerBndS).limit_base)
         val bnd_offset = Mux(decrypt_result.typ.asBool, 
                             decrypt_result.bnd.asTypeOf(new DBCheckerBndL).limit_offset, 
@@ -302,7 +302,7 @@ class DBChecker extends Module with DBCheckerConst{
       .otherwise{
         m_axi_io_rx.aw.valid := s_axi_io_rx.aw.valid & w_aw_release
         m_axi_io_rx.aw.bits  := s_axi_io_rx.aw.bits
-        m_axi_io_rx.aw.bits.addr := s_axi_io_rx.aw.bits.addr(35, 0)
+        m_axi_io_rx.aw.bits.addr := s_axi_io_rx.aw.bits.addr(31, 0)
         s_axi_io_rx.aw.ready := m_axi_io_rx.aw.ready & w_aw_release
         m_axi_io_rx.w.valid := s_axi_io_rx.w.valid & w_w_release
         m_axi_io_rx.w.bits  := s_axi_io_rx.w.bits

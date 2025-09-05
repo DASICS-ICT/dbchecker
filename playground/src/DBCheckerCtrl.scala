@@ -11,7 +11,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   val encrypt_req = IO(Decoupled(new QarmaInputBundle))
   val encrypt_resp = IO(Flipped(Decoupled(new QarmaOutputBundle)))
   val dbte_v_bm = IO(Output(Vec(dbte_num,Bool())))
-  val dbte_sram_w = IO(Flipped(new MemoryWritePort(UInt(36.W), log2Up(dbte_num), false)))
+  val dbte_sram_w = IO(Flipped(new MemoryWritePort(UInt(32.W), log2Up(dbte_num), false)))
   val err_req_r = IO(Flipped(Decoupled(new DBCheckerErrReq)))
   val err_req_w = IO(Flipped(Decoupled(new DBCheckerErrReq)))
 
@@ -146,12 +146,12 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
     switch (cmd_reg_struct.op) {
       is (cmd_op_free) { // free
         // Free the DBTE entry
-        when (cmd_reg_struct.imm((64 - 36 - 1), (64 - 36) - log2Up(dbte_num)) >= dbte_num.U) { // illegal cmd
+        when (cmd_reg_struct.imm((64 - 32 - 1), (64 - 32) - log2Up(dbte_num)) >= dbte_num.U) { // illegal cmd
           cmd_reg := Cat(cmd_status_error, cmd_reg(63 - cmd_status_error.getWidth, 0)) // clear v
         }
         .otherwise{
           cmd_reg := Cat(cmd_status_ok, cmd_reg(63 - cmd_status_ok.getWidth, 0)) // clear v
-          val dbte_index = cmd_reg_struct.imm((64 - 36 - 1), (64 - 36) - log2Up(dbte_num))
+          val dbte_index = cmd_reg_struct.imm((64 - 32 - 1), (64 - 32) - log2Up(dbte_num))
           dbte_v_bitmap(dbte_index) := false.B
         }
       }
@@ -172,7 +172,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
                 cmd_reg := Cat(cmd_status_ok, cmd_reg(63 - cmd_status_ok.getWidth, 0)) // clear v
                 val fake_mtdt = cmd_reg_struct.imm.asTypeOf(UInt(64.W)).asTypeOf(new DBCheckerMtdt)
                 res_reg := e_mtdt.get_ptr(Mux(fake_mtdt.typ.asBool,
-                                              Cat(fake_mtdt.bnd.asTypeOf(new DBCheckerBndL).limit_base,0.U((36 - (new DBCheckerBndL).limit_base.getWidth).W)),
+                                              Cat(fake_mtdt.bnd.asTypeOf(new DBCheckerBndL).limit_base,0.U((32 - (new DBCheckerBndL).limit_base.getWidth).W)),
                                               fake_mtdt.bnd.asTypeOf(new DBCheckerBndS).limit_base)) // store the result
                 dbte_v_bitmap(e_mtdt.get_index) := true.B
                 dbte_sram_w.address := e_mtdt.get_index

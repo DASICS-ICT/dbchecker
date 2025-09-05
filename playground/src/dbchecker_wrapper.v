@@ -140,7 +140,7 @@ module dbchecker_wrapper (
   input  [15:0] s_axi_io_rx_wstrb,
   input         s_axi_io_rx_wvalid,
 
-  output  [35:0] m_axi_io_rx_araddr,
+  output  [31:0] m_axi_io_rx_araddr,
   output  [1:0]  m_axi_io_rx_arburst,
   output  [3:0]  m_axi_io_rx_arcache,
   output  [7:0]  m_axi_io_rx_arlen,
@@ -150,7 +150,7 @@ module dbchecker_wrapper (
   input          m_axi_io_rx_arready,
   output  [2:0]  m_axi_io_rx_arsize,
   output         m_axi_io_rx_arvalid,
-  output  [35:0] m_axi_io_rx_awaddr,
+  output  [31:0] m_axi_io_rx_awaddr,
   output  [1:0]  m_axi_io_rx_awburst,
   output  [3:0]  m_axi_io_rx_awcache,
   output  [7:0]  m_axi_io_rx_awlen,
