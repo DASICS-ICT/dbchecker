@@ -12,6 +12,11 @@ class DBChecker extends Module with DBCheckerConst{
   val s_axi_io_rx = IO(new AxiSlave(64, 128))
   val s_axil_ctrl = IO(new AxiLiteSlave(32, 32))
 
+  val debug_if    = IO(new Bundle {
+    val flow = Output(UInt(64.W))
+    val ctrl = Output(UInt(64.W))
+  })
+
   // DBTE sram table, 32 bits each
   val dbte_mem = SRAM(dbte_num, UInt(32.W), 2, 1, 0)
   val qarma_encrypt = Module(new QarmaMultiCycle)
@@ -102,7 +107,6 @@ class DBChecker extends Module with DBCheckerConst{
         val dbte_index = r_araddr_ptr.get_index
         when (!ctrl.ctrl_reg(chk_en)) {
           // checker not enable, bypass
-          r_chk_err := false.B
           r_chan_status := DBCheckerState.Release
         }
         .elsewhen (!ctrl.dbte_v_bm(dbte_index)) {
@@ -116,7 +120,6 @@ class DBChecker extends Module with DBCheckerConst{
         } 
         .otherwise {
           // DBTE entry is valid, read it from SRAM
-          r_chk_err := false.B
           r_sram_mtdt := 0.U
           dbte_mem.readPorts(0).address := dbte_index
           dbte_mem.readPorts(0).enable := true.B
@@ -190,7 +193,7 @@ class DBChecker extends Module with DBCheckerConst{
     is(DBCheckerState.Return) {
         when (r_chk_err) {
           s_axi_io_rx.r.valid := true.B
-          s_axi_io_rx.r.bits.resp := 2.U // SLVERR
+          s_axi_io_rx.r.bits.resp := 2.U // SUPPOSED TO BE SLVERR
           s_axi_io_rx.r.bits.data := 0.U
           s_axi_io_rx.r.bits.last := true.B
         }
@@ -200,6 +203,7 @@ class DBChecker extends Module with DBCheckerConst{
           m_axi_io_rx.r.ready := s_axi_io_rx.r.ready
         }
         when (s_axi_io_rx.r.valid && s_axi_io_rx.r.ready && s_axi_io_rx.r.bits.last) {
+          r_chk_err := false.B
           r_chan_status := DBCheckerState.ReadDBTE 
         }
     }
@@ -213,7 +217,6 @@ class DBChecker extends Module with DBCheckerConst{
         val dbte_index = w_awaddr_ptr.get_index
         when (!ctrl.ctrl_reg(chk_en)) {
           // checker not enable, bypass
-          w_chk_err := false.B
           w_aw_release := true.B
           w_w_release := true.B
           w_chan_status := DBCheckerState.Release
@@ -233,7 +236,6 @@ class DBChecker extends Module with DBCheckerConst{
         } 
         .otherwise {
           // DBTE entry is valid, read it from SRAM
-          w_chk_err := false.B
           w_sram_mtdt := 0.U
           dbte_mem.readPorts(1).address := dbte_index
           dbte_mem.readPorts(1).enable := true.B
@@ -322,7 +324,7 @@ class DBChecker extends Module with DBCheckerConst{
     is(DBCheckerState.Return) {
       when (w_chk_err) {
         s_axi_io_rx.b.valid := true.B
-        s_axi_io_rx.b.bits.resp := 2.U // SLVERR
+        s_axi_io_rx.b.bits.resp := 2.U // // SUPPOSED TO BE SLVERR
       }
       .otherwise{
         s_axi_io_rx.b.valid := m_axi_io_rx.b.valid
@@ -330,8 +332,11 @@ class DBChecker extends Module with DBCheckerConst{
         m_axi_io_rx.b.ready := s_axi_io_rx.b.ready
       }
       when (s_axi_io_rx.b.valid && s_axi_io_rx.b.ready) {
+        w_chk_err := false.B
         w_chan_status := DBCheckerState.ReadDBTE 
       }
     }
   }
+  debug_if.ctrl := ctrl.debug_if
+  debug_if.flow := Cat(r_chan_status.asUInt, w_chan_status.asUInt, r_decrypt_no, w_decrypt_no, cur_decrypt_input_no, cur_decrypt_output_no, w_aw_release.asUInt, w_w_release.asUInt, w_chk_err.asUInt, r_chk_err.asUInt)
 }

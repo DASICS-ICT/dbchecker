@@ -15,6 +15,8 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   val err_req_r = IO(Flipped(Decoupled(new DBCheckerErrReq)))
   val err_req_w = IO(Flipped(Decoupled(new DBCheckerErrReq)))
 
+  val debug_if = IO(Output(UInt(64.W)))
+
   // register file r/w logic
   val regFile = RegInit(VecInit(Seq.fill(RegNum)(0.U(64.W))))
   ctrl_reg := regFile
@@ -23,10 +25,10 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   val state = RegInit(AXILiteState.Idle)
   
   // Internal signals
-  val readAddrReg  = Reg(UInt(32.W))
-  val writeAddrReg = Reg(UInt(32.W))
-  val writeDataReg = Reg(UInt(32.W))
-  val writeStrbReg = Reg(UInt(4.W))
+  val readAddrReg  = RegInit(0.U(32.W))
+  val writeAddrReg = RegInit(0.U(32.W))
+  val writeDataReg = RegInit(0.U(32.W))
+  val writeStrbReg = RegInit(0.U(4.W))
   // Default outputs
   s_axil.aw.ready     := false.B
   s_axil.w.ready      := false.B
@@ -118,7 +120,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   dbte_v_bm := dbte_v_bitmap
 
   // DBTE alloc reg
-  val dbte_alloc_state = RegInit(DBTEAllocState.waitEncryptReq)
+  val dbte_alloc_state = RegInit(DBTEAllocState.WaitEncryptReq)
   val dbte_alloc_id = RegInit(0.U((new DBCheckerMtdt).id.getWidth.W))
   
   val cmd_reg = regFile(chk_cmd)
@@ -157,12 +159,12 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
       }
       is (cmd_op_alloc) { // alloc
         switch(dbte_alloc_state) {
-          is (DBTEAllocState.waitEncryptReq) {
+          is (DBTEAllocState.WaitEncryptReq) {
             // Start the allocation process
             encrypt_req.valid := true.B
-            when (encrypt_req.ready) {dbte_alloc_state := DBTEAllocState.waitEncryptResp}
+            when (encrypt_req.ready) {dbte_alloc_state := DBTEAllocState.WaitEncryptResp}
           }
-          is (DBTEAllocState.waitEncryptResp) {
+          is (DBTEAllocState.WaitEncryptResp) {
             // Wait for the encryption to complete
             encrypt_resp.ready := true.B
             when (encrypt_resp.valid) {
@@ -187,7 +189,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
                   dbte_alloc_id := dbte_alloc_id + 1.U
                 }
               }
-              dbte_alloc_state := DBTEAllocState.waitEncryptReq
+              dbte_alloc_state := DBTEAllocState.WaitEncryptReq
             }
           }
         }
@@ -221,4 +223,6 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   }
   err_req_r.ready := cnt_enable
   err_req_w.ready := cnt_enable
+
+  debug_if := Cat(state.asUInt, cmd_reg_struct.status, dbte_alloc_state.asUInt, dbte_alloc_id, encrypt_req.valid.asUInt, encrypt_req.ready.asUInt, encrypt_resp.valid.asUInt, encrypt_resp.ready.asUInt)
 }

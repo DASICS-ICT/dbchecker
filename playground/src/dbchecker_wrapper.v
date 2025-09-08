@@ -172,8 +172,10 @@ module dbchecker_wrapper (
   output         m_axi_io_rx_wlast,
   input          m_axi_io_rx_wready,
   output  [15:0] m_axi_io_rx_wstrb,
-  output         m_axi_io_rx_wvalid
+  output         m_axi_io_rx_wvalid,
 
+  output [63:0] debug_if_flow,
+  output [63:0] debug_if_ctrl
 );
 
 DBChecker DBChecker_0(
@@ -338,8 +340,9 @@ DBChecker DBChecker_0(
   .m_axi_io_rx_w_bits_last(m_axi_io_rx_wlast),
   .m_axi_io_rx_w_ready(m_axi_io_rx_wready),
   .m_axi_io_rx_w_bits_strb(m_axi_io_rx_wstrb),
-  .m_axi_io_rx_w_valid(m_axi_io_rx_wvalid)
-
+  .m_axi_io_rx_w_valid(m_axi_io_rx_wvalid),
+  .debug_if_flow(debug_if_flow),
+  .debug_if_ctrl(debug_if_ctrl)
 );
 
 endmodule

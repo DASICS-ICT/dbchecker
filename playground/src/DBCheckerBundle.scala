@@ -123,7 +123,7 @@ class DBCheckerPtr extends Bundle with DBCheckerConst{
 }
 
 object DBTEAllocState extends ChiselEnum {
-  val waitEncryptReq, waitEncryptResp = Value
+  val WaitEncryptReq, WaitEncryptResp = Value
 }
 
 object DBCheckerState extends ChiselEnum {
