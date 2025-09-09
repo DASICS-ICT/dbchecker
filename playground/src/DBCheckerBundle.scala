@@ -127,5 +127,5 @@ object DBTEAllocState extends ChiselEnum {
 }
 
 object DBCheckerState extends ChiselEnum {
-  val ReadDBTE, WaitCheckreq, WaitCheckresp, Release, Return = Value
+  val ReadDBTE, WaitCheckreq, WaitCheckresp, Return = Value
 }
