@@ -2,7 +2,7 @@ package DBChecker
 
 import chisel3._
 import chisel3.util._
-
+import axi._
 trait DBCheckerConst {
   val debug = true
   val RegNum = 8 // total register num
@@ -122,10 +122,27 @@ class DBCheckerPtr extends Bundle with DBCheckerConst{
     }
 }
 
+// FSM
+
 object DBTEAllocState extends ChiselEnum {
   val WaitEncryptReq, WaitEncryptResp = Value
 }
 
 object DBCheckerState extends ChiselEnum {
   val ReadDBTE, WaitCheckreq, WaitCheckresp, Return = Value
+}
+
+// Pipeline passed structure
+
+class DBCheckerPipeIn extends Bundle with DBCheckerConst{
+    val axi_a = new AxiAddr(64)
+    val dbte_v_bm = Vec(dbte_num,Bool())
+    val en = Bool()
+}
+class DBCheckerPipeMedium extends Bundle with DBCheckerConst{
+    val axi_a = new AxiAddr(64)
+    val dbte = new DBCheckerMtdt
+    val bypass = Bool() // bypass checker
+    val err_v = Bool()
+    val err_req = new DBCheckerErrReq
 }

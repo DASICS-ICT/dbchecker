@@ -10,7 +10,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   val ctrl_reg = IO(Output(Vec(RegNum, UInt(64.W))))
   val encrypt_req = IO(Decoupled(new QarmaInputBundle))
   val encrypt_resp = IO(Flipped(Decoupled(new QarmaOutputBundle)))
-  val dbte_v_bm = IO(Output(Vec(dbte_num,Bool())))
+  val dbte_v_bm = IO(Output(UInt(dbte_num.W)))
   val dbte_sram_w = IO(Flipped(new MemoryWritePort(UInt(32.W), log2Up(dbte_num), false)))
   val err_req_r = IO(Flipped(Decoupled(new DBCheckerErrReq)))
   val err_req_w = IO(Flipped(Decoupled(new DBCheckerErrReq)))
@@ -116,7 +116,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   dbte_sram_w.enable := false.B
 
   // valid bitmap for DBTE entries
-  val dbte_v_bitmap = RegInit(VecInit(Seq.fill(dbte_num)(false.B)))
+  val dbte_v_bitmap = RegInit(RegInit(0.U(dbte_num.W)))
   dbte_v_bm := dbte_v_bitmap
 
   // DBTE alloc reg
@@ -154,7 +154,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
         .otherwise{
           cmd_reg := Cat(cmd_status_ok, cmd_reg(63 - cmd_status_ok.getWidth, 0)) // clear v
           val dbte_index = cmd_reg_struct.imm((64 - 32 - 1), (64 - 32) - log2Up(dbte_num))
-          dbte_v_bitmap(dbte_index) := false.B
+          dbte_v_bitmap := dbte_v_bitmap.bitSet(dbte_index, false.B)
         }
       }
       is (cmd_op_alloc) { // alloc
@@ -176,7 +176,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
                 res_reg := e_mtdt.get_ptr(Mux(fake_mtdt.typ.asBool,
                                               Cat(fake_mtdt.bnd.asTypeOf(new DBCheckerBndL).limit_base,0.U((32 - (new DBCheckerBndL).limit_base.getWidth).W)),
                                               fake_mtdt.bnd.asTypeOf(new DBCheckerBndS).limit_base)) // store the result
-                dbte_v_bitmap(e_mtdt.get_index) := true.B
+                dbte_v_bitmap := dbte_v_bitmap.bitSet(e_mtdt.get_index, true.B)
                 dbte_sram_w.address := e_mtdt.get_index
                 dbte_sram_w.enable  := true.B
                 dbte_sram_w.data    := e_mtdt.get_dbte
