@@ -3,7 +3,6 @@ package DBChecker
 import chisel3._
 import chisel3.util._
 import axi._
-import os.truncate
 
 class DBChecker extends Module with DBCheckerConst{
   val m_axi_io_tx = IO(new AxiMaster(32, 32))
@@ -122,7 +121,7 @@ class DBChecker extends Module with DBCheckerConst{
           ctrl.err_req_r.valid := true.B
           ctrl.err_req_r.bits.typ := err_mtdt_finv
           ctrl.err_req_r.bits.info := target_addr
-          ctrl.err_req_w.bits.mtdt := 0.U
+          ctrl.err_req_r.bits.mtdt := 0.U
           when (ctrl.err_req_r.ready) {
             r_chan_status := DBCheckerState.Return
           }
