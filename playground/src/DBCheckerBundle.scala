@@ -31,6 +31,7 @@ trait DBCheckerConst {
     def cmd_op_free  = 0.U(2.W)
     def cmd_op_alloc = 1.U(2.W)
     def cmd_op_clr_err = 2.U(2.W)
+    def cmd_op_switch = 3.U(2.W)
 
     def cmd_status_inv     = 0.U(2.W)
     def cmd_status_req     = 1.U(2.W)
@@ -99,9 +100,9 @@ class DBCheckerErrReq extends Bundle {
     val mtdt = UInt(64.W)
 }
 
-  // -----------------------------------------------------------------------------------------------------------
-  // |status(2)|operation(0:free 1:alloc 2:clr_err)|0...0|E(metadata)_index(if free) / metadata[51:0] (if alloc)|
-  // -----------------------------------------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------------------------------------------------
+  // |status(2)|operation(0:free 1:alloc 2:clr_err 3:switch)|0...0|E(metadata)_index(if free) / metadata[51:0] (if alloc)|
+  // ---------------------------------------------------------------------------------------------------------------------
 
 class DBCheckerCommand extends Bundle {
     val status = UInt(2.W) 

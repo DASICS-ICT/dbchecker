@@ -12,6 +12,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   val encrypt_resp = IO(Flipped(Decoupled(new QarmaOutputBundle)))
   val dbte_v_bm = IO(Output(UInt(dbte_num.W)))
   val dbte_sram_w = IO(Flipped(new MemoryWritePort(UInt(32.W), log2Up(dbte_num), false)))
+  val dbte_sram_r = IO(Flipped(new MemoryReadPort(UInt(32.W), log2Up(dbte_num))))
   val err_req_r = IO(Flipped(Decoupled(new DBCheckerErrReq)))
   val err_req_w = IO(Flipped(Decoupled(new DBCheckerErrReq)))
 
@@ -110,11 +111,15 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
 
   // special logic for DBChecker control process
 
-  // DBTE ram table, 24 bits each
+  // DBTE ram table, 32 bits each
+  dbte_sram_r.address := 0.U
+  dbte_sram_r.enable := false.B
+
   dbte_sram_w.address := 0.U
   dbte_sram_w.data := 0.U
   dbte_sram_w.enable := false.B
 
+  val free_sram_wait = RegInit(false.B)
   // valid bitmap for DBTE entries
   val dbte_v_bitmap = RegInit(RegInit(0.U(dbte_num.W)))
   dbte_v_bm := dbte_v_bitmap
@@ -148,13 +153,30 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
     switch (cmd_reg_struct.op) {
       is (cmd_op_free) { // free
         // Free the DBTE entry
-        when (cmd_reg_struct.imm((64 - 32 - 1), (64 - 32) - log2Up(dbte_num)) >= dbte_num.U) { // illegal cmd
+        val dbte_index = cmd_reg_struct.imm((64 - 32 - 1), (64 - 32) - log2Up(dbte_num))
+        when (dbte_index >= dbte_num.U || !dbte_v_bitmap(dbte_index)) { // illegal cmd
           cmd_reg := Cat(cmd_status_error, cmd_reg(63 - cmd_status_error.getWidth, 0)) // clear v
         }
         .otherwise{
-          cmd_reg := Cat(cmd_status_ok, cmd_reg(63 - cmd_status_ok.getWidth, 0)) // clear v
-          val dbte_index = cmd_reg_struct.imm((64 - 32 - 1), (64 - 32) - log2Up(dbte_num))
-          dbte_v_bitmap := dbte_v_bitmap.bitSet(dbte_index, false.B)
+          when (!free_sram_wait){
+            dbte_sram_r.address := dbte_index
+            dbte_sram_r.enable := true.B
+            free_sram_wait := true.B
+          }.otherwise{
+            free_sram_wait := false.B
+            when (dbte_sram_r.data =/= cmd_reg_struct.imm) {
+              // the mentioned DBTE entry has been switched out
+              cmd_reg := Cat(cmd_status_error, cmd_reg(63 - cmd_status_error.getWidth, 0)) // clear v
+              res_reg := dbte_sram_r.data 
+            } .otherwise {
+              // free success
+              cmd_reg := Cat(cmd_status_ok, cmd_reg(63 - cmd_status_ok.getWidth, 0)) // clear v
+              dbte_v_bitmap := dbte_v_bitmap.bitSet(dbte_index, false.B)
+              res_reg := cmd_reg_struct.imm
+            } 
+          }
+
+
         }
       }
       is (cmd_op_alloc) { // alloc
@@ -184,6 +206,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
                 when (dbte_alloc_id === (1.U << dbte_alloc_id.getWidth) - 1.U) { // alloc fail, corresponding dbtes are all full
                   dbte_alloc_id := 0.U
                   cmd_reg := Cat(cmd_status_error, cmd_reg(63 - cmd_status_error.getWidth, 0)) // clear v
+                  res_reg := encrypt_resp.bits.result // return the last failed encrypted metadata, software can switch it
                 }
                 .otherwise { // change id, retry
                   dbte_alloc_id := dbte_alloc_id + 1.U
@@ -193,13 +216,27 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
             }
           }
         }
-
       }
       is (cmd_op_clr_err) { // clear err counter
         cmd_reg := Cat(cmd_status_ok, cmd_reg(63 - cmd_status_ok.getWidth, 0)) // clear v
         err_cnt_reg  := 0.U
         err_info_reg := 0.U
         err_mtdt_reg := 0.U
+      }
+      is (cmd_op_switch) { // switch
+        val dbte_index = cmd_reg_struct.imm((64 - 32 - 1), (64 - 32) - log2Up(dbte_num))
+        when (!free_sram_wait) {
+          dbte_sram_r.address := dbte_index
+          dbte_sram_r.enable := true.B
+          free_sram_wait := true.B
+        }.otherwise{
+          free_sram_wait := false.B
+          res_reg := dbte_sram_r.data 
+          dbte_sram_w.address := dbte_index
+          dbte_sram_w.enable  := true.B
+          dbte_sram_w.data    := cmd_reg_struct.imm((64 - 32 - 1), 0)
+          cmd_reg := Cat(cmd_status_ok, cmd_reg(63 - cmd_status_ok.getWidth, 0)) // clear v
+        }
       }
     }
   }

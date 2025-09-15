@@ -27,7 +27,7 @@ class DBChecker extends Module with DBCheckerConst{
   qarma_encrypt.input <> ctrl.encrypt_req
   qarma_encrypt.output <> ctrl.encrypt_resp
   dbte_mem.writePorts(0) <> ctrl.dbte_sram_w
-
+  dbte_mem.readPorts(0) <> ctrl.dbte_sram_r
 // tx direction is not used currently
   m_axi_io_tx <> s_axi_io_tx
 
@@ -48,8 +48,7 @@ class DBChecker extends Module with DBCheckerConst{
   handler.decrypt_resp <> qarma_decrypt.output
   handler.err_req_r <> ctrl.err_req_r
   handler.err_req_w <> ctrl.err_req_w
-  handler.dbte_sram_r <> dbte_mem.readPorts
-
+  handler.dbte_sram_r <> dbte_mem.readPorts(1)
 
   debug_if.ctrl := ctrl.debug_if
   debug_if.flow := handler.debug_if

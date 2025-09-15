@@ -14,7 +14,7 @@ class DBCheckerFSM extends Module with DBCheckerConst{
   val decrypt_resp = IO(Flipped(Decoupled(new QarmaOutputBundle)))
   val err_req_r = IO(Decoupled(new DBCheckerErrReq))
   val err_req_w = IO(Decoupled(new DBCheckerErrReq))
-  val dbte_sram_r = IO(Vec(2, Flipped(new MemoryReadPort(UInt(32.W), log2Up(dbte_num)))))
+  val dbte_sram_r = IO(Flipped(new MemoryReadPort(UInt(32.W), log2Up(dbte_num))))
   val debug_if = IO(Output(UInt(64.W)))
 
   val r_chan_status = RegInit(DBCheckerState.ReadDBTE) 
@@ -37,10 +37,9 @@ class DBCheckerFSM extends Module with DBCheckerConst{
   val cur_decrypt_input_no = RegInit(0.U(1.W)) // serial number for cur decryption input
   val cur_decrypt_output_no = RegInit(0.U(1.W)) // serial number for cur decryption output
 
-  dbte_sram_r(0).address := 0.U
-  dbte_sram_r(0).enable := false.B
-  dbte_sram_r(1).address := 0.U
-  dbte_sram_r(1).enable := false.B
+  val sram_r_occupied = WireInit(false.B)
+  dbte_sram_r.address := 0.U
+  dbte_sram_r.enable := false.B
 
   err_req_r.valid := false.B
   err_req_r.bits := 0.U.asTypeOf(new DBCheckerErrReq)
@@ -105,10 +104,11 @@ class DBCheckerFSM extends Module with DBCheckerConst{
         }
         .otherwise {
           // DBTE entry is valid, read it from SRAM
-          r_sram_mtdt := 0.U
-          dbte_sram_r(0).address := dbte_index
-          dbte_sram_r(0).enable := true.B
           when (w_chan_status =/= DBCheckerState.WaitCheckreq) {
+            r_sram_mtdt := 0.U
+            sram_r_occupied := true.B
+            dbte_sram_r.address := dbte_index
+            dbte_sram_r.enable := true.B
             r_chan_status := DBCheckerState.WaitCheckreq
           } // lock for decryption
         }
@@ -116,11 +116,11 @@ class DBCheckerFSM extends Module with DBCheckerConst{
     }
     is(DBCheckerState.WaitCheckreq) {
       when (r_sram_mtdt === 0.U) {
-        r_sram_mtdt := dbte_sram_r(0).data
+        r_sram_mtdt := dbte_sram_r.data
       }
       // send decrypt request
       decrypt_req.valid := true.B
-      decrypt_req.bits.text := Cat(r_araddr_ptr.e_mtdt_hi, Mux(r_sram_mtdt === 0.U, dbte_sram_r(0).data, r_sram_mtdt))
+      decrypt_req.bits.text := Cat(r_araddr_ptr.e_mtdt_hi, Mux(r_sram_mtdt === 0.U, dbte_sram_r.data, r_sram_mtdt))
       when (decrypt_req.ready) {
         r_decrypt_no := cur_decrypt_input_no
         cur_decrypt_input_no := cur_decrypt_input_no + 1.U
@@ -217,10 +217,10 @@ class DBCheckerFSM extends Module with DBCheckerConst{
         } 
         .otherwise {
           // DBTE entry is valid, read it from SRAM
-          w_sram_mtdt := 0.U
-          dbte_sram_r(1).address := dbte_index
-          dbte_sram_r(1).enable := true.B
-          when (r_chan_status =/= DBCheckerState.WaitCheckreq) {
+          when (r_chan_status =/= DBCheckerState.WaitCheckreq && !sram_r_occupied) {
+            w_sram_mtdt := 0.U
+            dbte_sram_r.address := dbte_index
+            dbte_sram_r.enable := true.B
             w_chan_status := DBCheckerState.WaitCheckreq
             } // lock for decrypt
         }
@@ -228,11 +228,11 @@ class DBCheckerFSM extends Module with DBCheckerConst{
     }
     is(DBCheckerState.WaitCheckreq) {
         when (w_sram_mtdt === 0.U) {
-          w_sram_mtdt := dbte_sram_r(1).data
+          w_sram_mtdt := dbte_sram_r.data
         }
       // send decrypt request
       decrypt_req.valid := true.B
-      decrypt_req.bits.text := Cat(w_awaddr_ptr.e_mtdt_hi, Mux(w_sram_mtdt === 0.U, dbte_sram_r(1).data, w_sram_mtdt))
+      decrypt_req.bits.text := Cat(w_awaddr_ptr.e_mtdt_hi, Mux(w_sram_mtdt === 0.U, dbte_sram_r.data, w_sram_mtdt))
       when (decrypt_req.ready) {
         w_decrypt_no := cur_decrypt_input_no
         cur_decrypt_input_no := cur_decrypt_input_no + 1.U

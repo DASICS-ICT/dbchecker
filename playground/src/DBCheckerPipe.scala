@@ -343,10 +343,9 @@ class DBCheckerPipeline extends Module with DBCheckerConst{
   val decrypt_resp = IO(Flipped(Decoupled(new QarmaOutputBundle)))
   val err_req_r = IO(Decoupled(new DBCheckerErrReq))
   val err_req_w = IO(Decoupled(new DBCheckerErrReq))
-  val dbte_sram_r = IO(Vec(2, Flipped(new MemoryReadPort(UInt(32.W), log2Up(dbte_num)))))
+  val dbte_sram_r = IO(Flipped(new MemoryReadPort(UInt(32.W), log2Up(dbte_num))))
   val debug_if = IO(Output(UInt(64.W)))
 
-    dbte_sram_r(1) <> DontCare
     err_req_w <> DontCare
 //frontend
     val stage0 = Module(new DBCheckerPipeStage0)
@@ -366,7 +365,7 @@ class DBCheckerPipeline extends Module with DBCheckerConst{
 
     stage1.in_pipe <> stage0.out_pipe
     stage1.dbte_v_bm := dbte_v_bm
-    stage1.dbte_mem_if <> dbte_sram_r(0)
+    stage1.dbte_mem_if <> dbte_sram_r
 
     stage2.in_pipe <> stage1.out_pipe
     stage2.decrypt_key := Cat(ctrl_reg(chk_keyh), ctrl_reg(chk_keyl))
