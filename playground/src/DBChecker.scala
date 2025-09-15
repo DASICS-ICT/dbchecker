@@ -39,18 +39,18 @@ class DBChecker extends Module with DBCheckerConst{
   // s_axi_io_rx <> rx_rb.s_axi
 
 // we assume that there is no out-of-order request
-  val fsm = Module(new DBCheckerFSM)
-  fsm.m_axi_io_rx <> m_axi_io_rx
-  fsm.s_axi_io_rx <> s_axi_io_rx
-  fsm.ctrl_reg <> ctrl.ctrl_reg
-  fsm.dbte_v_bm <> ctrl.dbte_v_bm
-  fsm.decrypt_req <> qarma_decrypt.input
-  fsm.decrypt_resp <> qarma_decrypt.output
-  fsm.err_req_r <> ctrl.err_req_w
-  fsm.err_req_w <> ctrl.err_req_r
-  fsm.dbte_sram_r <> dbte_mem.readPorts
+  val handler = Module(new DBCheckerPipeline)
+  handler.m_axi_io_rx <> m_axi_io_rx
+  handler.s_axi_io_rx <> s_axi_io_rx
+  handler.ctrl_reg <> ctrl.ctrl_reg
+  handler.dbte_v_bm <> ctrl.dbte_v_bm
+  handler.decrypt_req <> qarma_decrypt.input
+  handler.decrypt_resp <> qarma_decrypt.output
+  handler.err_req_r <> ctrl.err_req_r
+  handler.err_req_w <> ctrl.err_req_w
+  handler.dbte_sram_r <> dbte_mem.readPorts
 
 
   debug_if.ctrl := ctrl.debug_if
-  debug_if.flow := fsm.debug_if
+  debug_if.flow := handler.debug_if
 }

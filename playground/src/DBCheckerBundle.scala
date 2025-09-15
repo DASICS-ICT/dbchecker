@@ -136,12 +136,14 @@ object DBCheckerState extends ChiselEnum {
 
 class DBCheckerPipeIn extends Bundle with DBCheckerConst{
     val axi_a = new AxiAddr(64)
+    val axi_a_type = Bool()
     val dbte_v_bm = Vec(dbte_num,Bool())
     val en = Bool()
 }
 class DBCheckerPipeMedium extends Bundle with DBCheckerConst{
     val axi_a = new AxiAddr(64)
-    val dbte = new DBCheckerMtdt
+    val axi_a_type = Bool()
+    val dbte_lo = UInt(32.W)
     val bypass = Bool() // bypass checker
     val err_v = Bool()
     val err_req = new DBCheckerErrReq

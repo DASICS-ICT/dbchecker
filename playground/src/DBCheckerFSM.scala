@@ -138,7 +138,7 @@ class DBCheckerFSM extends Module with DBCheckerConst{
         val bnd_offset = Mux(decrypt_result.typ.asBool, 
                             decrypt_result.bnd.asTypeOf(new DBCheckerBndL).limit_offset, 
                             decrypt_result.bnd.asTypeOf(new DBCheckerBndS).limit_offset)
-        val bnd_err = (r_araddr_ptr.access_addr < bnd_base) || (r_araddr_ptr.access_addr > (bnd_base + bnd_offset)) 
+        val bnd_err = (r_araddr_ptr.access_addr < bnd_base) || ((r_araddr_ptr.access_addr + r_ar_reg.len) > (bnd_base + bnd_offset)) 
         val bnd_mismatch = !decrypt_result.r.asBool
         when (magic_num_err || bnd_err || bnd_mismatch) { // magic_num check
           // magic_num / bnd error

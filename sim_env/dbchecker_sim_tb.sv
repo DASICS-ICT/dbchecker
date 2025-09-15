@@ -222,7 +222,7 @@ module dbchecker_sim_tb();
             // 测试有效范围内的写入
             master_agent.AXI4_WRITE_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 32'h100, // 基地址+偏移量(在范围内)
+                {physical_pointer_hi, physical_pointer_lo} + 32'h50, // 基地址+偏移量(在范围内)
                 len,
                 size,
                 burst,
@@ -258,7 +258,7 @@ module dbchecker_sim_tb();
             // 尝试越界写入 (基地址+偏移量+1，超出范围)
             master_agent.AXI4_WRITE_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 32'h201, // 超出范围地址
+                {physical_pointer_hi, physical_pointer_lo} + 32'h200, // 超出范围地址
                 len,
                 size,
                 burst,
@@ -326,7 +326,7 @@ module dbchecker_sim_tb();
             // 测试有效范围内的写入
             master_agent.AXI4_WRITE_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 32'h1000, // 基地址+偏移量(在范围内)
+                {physical_pointer_hi, physical_pointer_lo} + 32'h500, // 基地址+偏移量(在范围内)
                 len,
                 size,
                 burst,
@@ -362,7 +362,7 @@ module dbchecker_sim_tb();
             // 尝试越界写入 (基地址+偏移量+0x1001，超出范围)
             master_agent.AXI4_WRITE_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 32'h2001, // 超出范围地址
+                {physical_pointer_hi, physical_pointer_lo} + 32'h2000, // 超出范围地址
                 len,
                 size,
                 burst,
@@ -389,7 +389,7 @@ module dbchecker_sim_tb();
             $display("Test 6: Permission Check");
             
             // 构造只读Buffer元数据 (type=0, R/W=0, offset=0x100, base=0x3000)
-            test_metadata = {2'b01, 2'b01, 9'b0, 1'b0, 1'b0, 1'b0, 16'h0100, 32'h3000};
+            test_metadata = {2'b01, 2'b01, 9'b0, 1'b0, 1'b0, 1'b1, 16'h0100, 32'h3000};
 
             // 发送alloc命令
             ctrl_agent.AXI4LITE_WRITE_BURST(
