@@ -51,6 +51,15 @@ trait DBCheckerConst {
 // |magic_num(4)|id(8)|reservec(1)|type(1)|w(1)|r(1)|limit_offset(s:16, l:32)|limit_base(s:32, l:16(low 16 bit = 0))|
 // ------------------------------------------------------------------------------------------------------------------
 
+class DBCheckerEnCtl extends Bundle with DBCheckerConst{
+  val reserved = UInt(58.W)
+  val err_rpt = Bool() // WO, when stall, write 1 to send error to bus
+  val err_byp  = Bool()  // WO, when stall, write 1 to bypass
+  val stall_mode = Bool() // 0: non-stall when error, 1: stall when error
+  val intr_clr  = Bool() // WO, clear intr
+  val intr_en  = Bool() // enable intr sending
+  val func_en   = Bool() // 0: disable, 1: enable
+}
 class DBCheckerMtdt extends Bundle with DBCheckerConst {
   val mn       = UInt(8.W)
   val id       = UInt(4.W)

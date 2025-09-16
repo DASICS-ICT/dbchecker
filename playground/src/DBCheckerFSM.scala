@@ -4,6 +4,9 @@ import chisel3._
 import chisel3.util._
 import axi._
 
+ // ATTENTION: this implementation is a rather simple version of DBChecker, which is not maintained after pipeline version is developed
+ // control stall and interrupt function in FSM is not available yet, you can implement it refering to pipeline module if you need
+
 class DBCheckerFSM extends Module with DBCheckerConst {
 
   val m_axi_io_rx  = IO(new AxiMaster(32, 128))
@@ -16,6 +19,7 @@ class DBCheckerFSM extends Module with DBCheckerConst {
   val err_req_w    = IO(Decoupled(new DBCheckerErrReq))
   val dbte_sram_r  = IO(Flipped(new MemoryReadPort(UInt(32.W), log2Up(dbte_num))))
   val debug_if     = IO(Output(UInt(64.W)))
+  val intr_state   = IO(Output(Bool()))
 
   val r_chan_status = RegInit(DBCheckerState.ReadDBTE)
   val r_sram_mtdt   = RegInit(0.U(32.W))
@@ -74,6 +78,8 @@ class DBCheckerFSM extends Module with DBCheckerConst {
   m_axi_io_rx.b.ready := false.B
   s_axi_io_rx.b.valid := false.B
   s_axi_io_rx.b.bits  := 0.U.asTypeOf(new AxiWriteResp)
+
+  intr_state := false.B
 
 // addr channel(ar/r)
   switch(r_chan_status) {

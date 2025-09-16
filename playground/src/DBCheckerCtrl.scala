@@ -92,7 +92,10 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
           (index === chk_cmd.U && regFile(index)
             .asTypeOf(new DBCheckerCommand)
             .status =/= cmd_status_req) || // when the command is not valid
-            index === chk_en.U || index === chk_keyl.U || index === chk_keyh.U
+            (index === chk_en.U && !regFile(index).asTypeOf(new DBCheckerEnCtl).err_byp && 
+                                   !regFile(index).asTypeOf(new DBCheckerEnCtl).err_rpt && 
+                                   !regFile(index).asTypeOf(new DBCheckerEnCtl).intr_clr) ||
+            index === chk_keyl.U || index === chk_keyh.U
         ) {
           regFile(index) := Mux(
             writeAddrReg(2),
@@ -112,6 +115,16 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
         state := AXILiteState.Idle
       }
     }
+  }
+
+  // clear the special bits in en_ctl
+  val en_ctl = regFile(chk_en).asTypeOf(new DBCheckerEnCtl)
+  when (en_ctl.err_byp || en_ctl.err_rpt || en_ctl.intr_clr) {
+    val new_en_ctl = WireInit(en_ctl)
+    when (en_ctl.err_byp) { new_en_ctl.err_byp := false.B }
+    when (en_ctl.err_rpt) { new_en_ctl.err_rpt := false.B }
+    when (en_ctl.intr_clr) { new_en_ctl.intr_clr := false.B }
+    regFile(chk_en) := new_en_ctl.asUInt
   }
 
   // special logic for DBChecker control process
