@@ -25,8 +25,9 @@ module dbchecker_sim_tb();
     test_design_axi_vip_output_0_slv_mem_t slave_agent;
     
     // 添加测试变量
-    bit [31:0] physical_pointer_lo;
-    bit [31:0] physical_pointer_hi;
+    bit [31:0] encrypted_metadata_lo;
+    bit [31:0] encrypted_metadata_hi;
+    bit [63:0] physical_pointer;
     bit [63:0] test_metadata;
     bit [127:0] test_key = 128'h0123456789ABCDEFFEDCBA9876543210;
     bit [31:0] err_cnt_lo;
@@ -203,18 +204,20 @@ module dbchecker_sim_tb();
             ctrl_agent.AXI4LITE_READ_BURST(
                 32'h4000_0010, // chk_res地址
                 0, // prot
-                physical_pointer_lo, // 存储物理指针
+                encrypted_metadata_lo, // 存储物理指针
                 resp
             );
 
             ctrl_agent.AXI4LITE_READ_BURST(
                 32'h4000_0014, // chk_res地址
                 0, // prot
-                physical_pointer_hi, // 存储物理指针
+                encrypted_metadata_hi, // 存储物理指针
                 resp
             );
 
-            $display("Allocated physical pointer: 0x%0h", {physical_pointer_hi, physical_pointer_lo});
+            physical_pointer = {encrypted_metadata_hi, 32'h2000};
+
+            $display("Allocated physical pointer: 0x%0h", physical_pointer);
             
             // 准备测试数据
             write_data = 64'hA5A5A5A5A5A5A5A5;
@@ -222,7 +225,7 @@ module dbchecker_sim_tb();
             // 测试有效范围内的写入
             master_agent.AXI4_WRITE_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 32'h50, // 基地址+偏移量(在范围内)
+                physical_pointer + 32'h50, // 基地址+偏移量(在范围内)
                 len,
                 size,
                 burst,
@@ -258,7 +261,7 @@ module dbchecker_sim_tb();
             // 尝试越界写入 (基地址+偏移量+1，超出范围)
             master_agent.AXI4_WRITE_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 32'h200, // 超出范围地址
+                physical_pointer + 32'h200, // 超出范围地址
                 len,
                 size,
                 burst,
@@ -307,18 +310,20 @@ module dbchecker_sim_tb();
             ctrl_agent.AXI4LITE_READ_BURST(
                 32'h4000_0010, // chk_res地址
                 0, // prot
-                physical_pointer_lo, // 存储物理指针
+                encrypted_metadata_lo, // 存储物理指针
                 resp
             );
 
             ctrl_agent.AXI4LITE_READ_BURST(
                 32'h4000_0014, // chk_res地址
                 0, // prot
-                physical_pointer_hi, // 存储物理指针
+                encrypted_metadata_hi, // 存储物理指针
                 resp
             );
             
-            $display("Allocated large buffer physical pointer: 0x%0h", {physical_pointer_hi, physical_pointer_lo});
+            physical_pointer = {encrypted_metadata_hi, 32'h10000000};
+
+            $display("Allocated large buffer physical pointer: 0x%0h", physical_pointer);
             
             // 准备测试数据
             write_data = 64'hC7C7C7C7C7C7C7C7;
@@ -326,7 +331,7 @@ module dbchecker_sim_tb();
             // 测试有效范围内的写入
             master_agent.AXI4_WRITE_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 32'h500, // 基地址+偏移量(在范围内)
+                physical_pointer + 32'h500, // 基地址+偏移量(在范围内)
                 len,
                 size,
                 burst,
@@ -362,7 +367,7 @@ module dbchecker_sim_tb();
             // 尝试越界写入 (基地址+偏移量+0x1001，超出范围)
             master_agent.AXI4_WRITE_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 32'h2000, // 超出范围地址
+                physical_pointer + 32'h2000, // 超出范围地址
                 len,
                 size,
                 burst,
@@ -411,18 +416,18 @@ module dbchecker_sim_tb();
             ctrl_agent.AXI4LITE_READ_BURST(
                 32'h4000_0010, // chk_res地址
                 0, // prot
-                physical_pointer_lo, // 存储物理指针
+                encrypted_metadata_lo, // 存储物理指针
                 resp
             );
 
             ctrl_agent.AXI4LITE_READ_BURST(
                 32'h4000_0014, // chk_res地址
                 0, // prot
-                physical_pointer_hi, // 存储物理指针
+                encrypted_metadata_hi, // 存储物理指针
                 resp
             );
-            
-            $display("Allocated read-only physical pointer: 0x%0h", {physical_pointer_hi, physical_pointer_lo});
+            physical_pointer = {encrypted_metadata_hi, 32'h3000};
+            $display("Allocated read-only physical pointer: 0x%0h", physical_pointer);
             
             // 准备测试数据
             write_data = 64'hE9E9E9E9E9E9E9E9;
@@ -430,7 +435,7 @@ module dbchecker_sim_tb();
             // 尝试写入只读缓冲区
             master_agent.AXI4_WRITE_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 32'h50, // 在范围内的地址
+                physical_pointer + 32'h50, // 在范围内的地址
                 len,
                 size,
                 burst,
@@ -457,7 +462,7 @@ module dbchecker_sim_tb();
             $display("Test 7: Free Operation");
             
             // 释放之前分配的缓冲区(使用最后一个物理指针的高32位作为index)
-            test_metadata = {2'b01, 2'b00, 8'b0, {20'b0, physical_pointer_hi}};
+            test_metadata = {2'b01, 2'b00, 8'b0, encrypted_metadata_hi[31:12], encrypted_metadata_lo};
 
             ctrl_agent.AXI4LITE_WRITE_BURST(
                 32'h4000_0008, // chk_cmd地址
@@ -483,7 +488,7 @@ module dbchecker_sim_tb();
             // 尝试访问已释放的缓冲区
             master_agent.AXI4_WRITE_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 32'h50, // 在范围内的地址
+                physical_pointer + 32'h50, // 在范围内的地址
                 len,
                 size,
                 burst,
@@ -531,24 +536,24 @@ module dbchecker_sim_tb();
             ctrl_agent.AXI4LITE_READ_BURST(
                 32'h4000_0010, // chk_res地址
                 0, // prot
-                physical_pointer_lo, // 存储物理指针
+                encrypted_metadata_lo, // 存储物理指针
                 resp
             );
 
             ctrl_agent.AXI4LITE_READ_BURST(
                 32'h4000_0014, // chk_res地址
                 0, // prot
-                physical_pointer_hi, // 存储物理指针
+                encrypted_metadata_hi, // 存储物理指针
                 resp
             );
-            
-            $display("Allocated buffer for write - read test: 0x%0h", {physical_pointer_hi, physical_pointer_lo});
+            physical_pointer = {encrypted_metadata_hi, 32'h4000};
+            $display("Allocated buffer for write - read test: 0x%0h", physical_pointer);
             
             // 首先写入一些数据
             write_data = 64'h123456789ABCDEF0;
             master_agent.AXI4_WRITE_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 32'h50, // 在范围内的地址
+                physical_pointer + 32'h50, // 在范围内的地址
                 len,
                 size,
                 burst,
@@ -572,7 +577,7 @@ module dbchecker_sim_tb();
             // 现在读取数据
             master_agent.AXI4_READ_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 32'h50, // 在范围内的地址
+                physical_pointer + 32'h50, // 在范围内的地址
                 len,
                 size,
                 burst,
@@ -599,7 +604,7 @@ module dbchecker_sim_tb();
             // 测试越界读取
             master_agent.AXI4_READ_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 32'h201, // 超出范围地址
+                physical_pointer + 32'h201, // 超出范围地址
                 len,
                 size,
                 burst,
@@ -647,25 +652,25 @@ module dbchecker_sim_tb();
             ctrl_agent.AXI4LITE_READ_BURST(
                 32'h4000_0010, // chk_res地址
                 0, // prot
-                physical_pointer_lo, // 存储物理指针
+                encrypted_metadata_lo, // 存储物理指针
                 resp
             );
 
             ctrl_agent.AXI4LITE_READ_BURST(
                 32'h4000_0014, // chk_res地址
                 0, // prot
-                physical_pointer_hi, // 存储物理指针
+                encrypted_metadata_hi, // 存储物理指针
                 resp
             );
-            
-            $display("Allocated buffer for tampering test: 0x%0h", {physical_pointer_hi, physical_pointer_lo});
+            physical_pointer = {encrypted_metadata_hi, 32'h4000};
+            $display("Allocated buffer for tampering test: 0x%0h", physical_pointer);
             
             
             // 尝试使用篡改后的指针访问
             write_data = 64'hFEDCBA9876543210;
             master_agent.AXI4_WRITE_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 40'h1000000000 + 32'h50, // 在范围内的地址
+                physical_pointer + 40'h1000000000 + 32'h50, // 在范围内的地址
                 len,
                 size,
                 burst,
@@ -724,13 +729,14 @@ module dbchecker_sim_tb();
                 resp
             );
 
-                $display("Allocated buffer %0d: 0x%0h", i, {physical_ptr_array[2 * i + 1], physical_ptr_array[2 * i]});
+                physical_pointer = {physical_ptr_array[2*i + 1], 32'h6000 + i*32'h100};
+                $display("Allocated buffer %0d: 0x%0h", i, physical_pointer);
 
                 // 测试写入
                 write_data = 64'hA0A0A0A0A0A0A0A0 + i;
                 master_agent.AXI4_WRITE_BURST(
                     id,
-                    {physical_ptr_array[2 * i + 1], physical_ptr_array[2 * i]} + 32'h50, // 在范围内的地址
+                    physical_pointer + 32'h50, // 在范围内的地址
                     len,
                     size,
                     burst,
@@ -756,7 +762,7 @@ module dbchecker_sim_tb();
             
             // 释放所有缓冲区
             for (int i = 0; i < 4; i++) begin
-            test_metadata = {2'b01, 2'b00, 6'b0, {27'b0, physical_ptr_array[2 * i + 1][31:4]}};
+            test_metadata = {2'b01, 2'b00, 6'b0, {physical_ptr_array[2 * i + 1][31:12], physical_ptr_array[2 * i]}};
             ctrl_agent.AXI4LITE_WRITE_BURST(
                 32'h4000_0008, // chk_cmd地址
                 0, // prot
@@ -857,7 +863,7 @@ module dbchecker_sim_tb();
             write_data = 64'hD1D1D1D1D1D1D1D1;
             master_agent.AXI4_WRITE_BURST(
                 id,
-                {physical_pointer_hi, physical_pointer_lo} + 32'h50, // 在范围内的地址
+                physical_pointer + 32'h50, // 在范围内的地址
                 len,
                 size,
                 burst,
