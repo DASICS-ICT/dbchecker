@@ -248,6 +248,8 @@ class DBCheckerPipeStage5R extends Module with DBCheckerConst{ // Return_R
     }
 
     when (pipe_medium_reg.err_v) {
+        // TODO: let software decide to pass / to slverr
+        // maybe switch mode to accelerate? add intr mode?
         s_r_chan.valid := true.B
         s_r_chan.bits.data := 0.U
         s_r_chan.bits.resp := 2.U // SLVERR
@@ -308,9 +310,10 @@ class DBCheckerPipeStage5W extends Module with DBCheckerConst{ // Return_W
     }
 
      when (pipe_medium_reg.err_v) {
+        // TODO: let software decide to pass / to slverr
         s_w_chan.ready := w_release_reg
         s_b_chan.valid := !w_release_reg
-        s_b_chan.bits.resp := 2.U  // SUPPOSED TO BE SLVERR
+        s_b_chan.bits.resp := 2.U  // SLVERR
     }.otherwise{
         m_aw_chan.valid := aw_release_reg
         m_aw_chan.bits  := pipe_medium_reg.axi_a

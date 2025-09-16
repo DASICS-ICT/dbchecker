@@ -7,7 +7,7 @@ trait DBCheckerConst {
   val debug = true
   val RegNum = 8 // total register num
 
-  val magic_num = 0xa // 1010
+  val magic_num = 0xcb // 11101011
   val dbte_num  = 4096
   
   // reg index (actual addr is 8 byte aligned, r/w lo-hi)
@@ -53,8 +53,8 @@ trait DBCheckerConst {
 
 
 class DBCheckerMtdt extends Bundle with DBCheckerConst{
-    val mn           = UInt(4.W)
-    val id           = UInt(8.W)
+    val mn           = UInt(8.W)
+    val id           = UInt(4.W)
     val reserved     = UInt(1.W)
     val typ          = UInt(1.W)
     val w            = UInt(1.W)
