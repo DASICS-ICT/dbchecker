@@ -4,14 +4,14 @@ import chisel3._
 import chisel3.util._
 
 object AxiDma {
-  val MaxBurstLen = 0x100
+  val MaxBurstLen     = 0x100
   val DefaultMaxTxLen = 0x7fffff // default of Xilinx DataMover IP (23 bits)
 }
 import AxiDma._
 
 class AxiDmaParams(val addrWidth: Int, val maxTxLen: Int) extends Bundle {
   val addr = UInt(addrWidth.W)
-  val len = UInt(maxTxLen.U.getWidth.W)
+  val len  = UInt(maxTxLen.U.getWidth.W)
 }
 
 object AxiDmaParams {
@@ -25,54 +25,56 @@ object AxiDmaState extends ChiselEnum {
 }
 import AxiDmaState._
 
-class AxiMapperIO(streamT: AxiStream,
-                  addrT: AxiAddr,
-                  dataT: AxiData,
-                  dataDirection: SpecifiedDirection,
-                  val maxTxLen: Int)
+class AxiMapperIO(
+  streamT:       AxiStream,
+  addrT:         AxiAddr,
+  dataT:         AxiData,
+  dataDirection: SpecifiedDirection,
+  val maxTxLen:  Int)
     extends Bundle {
   def ddt() = Decoupled(dataT.cloneType)
   def dst() = Decoupled(streamT.cloneType)
 
-  val mm = new Bundle {
+  val mm     = new Bundle {
     val addr = Decoupled(addrT.cloneType)
     val data = if (dataDirection == SpecifiedDirection.Input) Flipped(ddt()) else ddt()
   }
-  val s = if (dataDirection == SpecifiedDirection.Input) dst() else Flipped(dst())
+  val s      = if (dataDirection == SpecifiedDirection.Input) dst() else Flipped(dst())
   val params = Flipped(Decoupled(AxiDmaParams(addrWidth = addrT.addrWidth, maxTxLen = maxTxLen)))
 }
 
-abstract class AxiMapper(val streamT: AxiStream,
-                         val addrT: AxiAddr,
-                         val dataT: AxiData,
-                         val dataDirection: SpecifiedDirection,
-                         val maxTxLen: Int)
+abstract class AxiMapper(
+  val streamT:       AxiStream,
+  val addrT:         AxiAddr,
+  val dataT:         AxiData,
+  val dataDirection: SpecifiedDirection,
+  val maxTxLen:      Int)
     extends Module {
   val ddstr = if (dataDirection == SpecifiedDirection.Input) "Input" else "Output"
 
   val dataBytes = dataT.dataWidth / 8
-  val state = RegInit(WaitParams)
+  val state     = RegInit(WaitParams)
 
   val io = IO(new AxiMapperIO(streamT, addrT, dataT, dataDirection, maxTxLen))
 
-  val loadParams = io.params.valid && state === WaitParams
-  val addr = RegEnable(io.params.bits.addr, loadParams)
-  val inBeats = ceilDiv(io.params.bits.len, dataBytes)
-  val beatsLeft = RegEnable(inBeats, loadParams)
+  val loadParams     = io.params.valid && state === WaitParams
+  val addr           = RegEnable(io.params.bits.addr, loadParams)
+  val inBeats        = ceilDiv(io.params.bits.len, dataBytes)
+  val beatsLeft      = RegEnable(inBeats, loadParams)
   val burstBeatsLeft = Reg(UInt(MaxBurstLen.U.getWidth.W))
 
   io.params.ready := state === WaitParams
 
   io.mm.addr.bits.initDefault()
   io.mm.addr.bits.addr := addr
-  io.mm.addr.bits.len := (beatsLeft - 1.U).min(0xff.U)
-  io.mm.addr.valid := state === SendAddr || (state === SendData && burstBeatsLeft === 0.U)
+  io.mm.addr.bits.len  := (beatsLeft - 1.U).min(0xff.U)
+  io.mm.addr.valid     := state === SendAddr || (state === SendData && burstBeatsLeft === 0.U)
 
   switch(state) {
     is(WaitParams) {
       when(io.params.valid) {
         burstBeatsLeft := inBeats.min(MaxBurstLen.U)
-        state := SendAddr
+        state          := SendAddr
       }
     }
 
@@ -90,11 +92,11 @@ abstract class AxiMapper(val streamT: AxiStream,
       }
       when(didTransfer) {
         burstBeatsLeft := burstBeatsLeft - 1.U
-        beatsLeft := beatsLeft - 1.U
-        addr := addr + dataBytes.U
+        beatsLeft      := beatsLeft - 1.U
+        addr           := addr + dataBytes.U
         when(burstBeatsLeft === 0.U) {
           burstBeatsLeft := beatsLeft.min(MaxBurstLen.U) - 1.U
-          state := Mux(beatsLeft === 0.U, WaitParams, SendData)
+          state          := Mux(beatsLeft === 0.U, WaitParams, SendData)
         }
       }
     }
@@ -103,14 +105,15 @@ abstract class AxiMapper(val streamT: AxiStream,
 
 /** An AXI MM2S interface which supports multi-burst reads.
   *
-  * @param addrT the AXI master read addr bundle type
-  * @param dataT the AXI master read data bundle type
-  * @param maxTxLen the maximum number of bytes in a transaction
+  * @param addrT
+  *   the AXI master read addr bundle type
+  * @param dataT
+  *   the AXI master read data bundle type
+  * @param maxTxLen
+  *   the maximum number of bytes in a transaction
   *
-  * IO Bundle:
-  *  mm.addr, mm.data - the addr/data channel (connect to AXI master)
-  *  s - the output AxiStream bundle
-  *  params - AxiDmaParams which describes the tx. `params.ready` is asserted when the tx is done.
+  * IO Bundle: mm.addr, mm.data - the addr/data channel (connect to AXI master) s - the output AxiStream bundle params -
+  * AxiDmaParams which describes the tx. `params.ready` is asserted when the tx is done.
   */
 class AxiMM2S(addrT: AxiAddr with AxiReadAddr, dataT: AxiReadData, maxTxLen: Int = DefaultMaxTxLen)
     extends AxiMapper(
@@ -118,13 +121,14 @@ class AxiMM2S(addrT: AxiAddr with AxiReadAddr, dataT: AxiReadData, maxTxLen: Int
       addrT,
       dataT,
       SpecifiedDirection.Input,
-      maxTxLen) {
+      maxTxLen
+    ) {
   io.s.bits.initDefault()
-  io.s.valid := io.mm.data.valid && state === SendData
-  io.s.bits.data := io.mm.data.bits.data
-  io.s.bits.id := io.mm.data.bits.getId.get
-  io.s.bits.user := io.mm.data.bits.user
-  io.s.bits.last := io.mm.data.bits.last
+  io.s.valid       := io.mm.data.valid && state === SendData
+  io.s.bits.data   := io.mm.data.bits.data
+  io.s.bits.id     := io.mm.data.bits.getId.get
+  io.s.bits.user   := io.mm.data.bits.user
+  io.s.bits.last   := io.mm.data.bits.last
   io.mm.data.ready := io.s.ready && state === SendData
 }
 
@@ -139,29 +143,30 @@ object AxiMM2S {
 
 /** An AXI S2MM interface which supports multi-burst writes.
   *
-  * @param addrT the AXI master read addr bundle type
-  * @param dataT the AXI master read data bundle type
-  * @param maxTxLen the maximum number of bytes in a transaction
+  * @param addrT
+  *   the AXI master read addr bundle type
+  * @param dataT
+  *   the AXI master read data bundle type
+  * @param maxTxLen
+  *   the maximum number of bytes in a transaction
   *
-  * IO Bundle:
-  *  mm.addr, mm.data - the addr/data channel (connect to AXI master)
-  *  s - the output AxiStream bundle
-  *  params - AxiDmaParams which describes the tx. `params.ready` is asserted when the tx is done.
+  * IO Bundle: mm.addr, mm.data - the addr/data channel (connect to AXI master) s - the output AxiStream bundle params -
+  * AxiDmaParams which describes the tx. `params.ready` is asserted when the tx is done.
   */
-class AxiS2MM(addrT: AxiAddr with AxiWriteAddr,
-              dataT: AxiWriteData,
-              maxTxLen: Int = DefaultMaxTxLen)
-    extends AxiMapper(AxiStream(dataT.dataWidth, userWidth = dataT.userWidth),
-                      addrT,
-                      dataT,
-                      SpecifiedDirection.Output,
-                      maxTxLen) {
-  io.s.ready := io.mm.data.ready && state === SendData
-  io.mm.data.bits.data := io.s.bits.data
-  io.mm.data.bits.user := io.s.bits.user
-  io.mm.data.bits.last := io.s.bits.last
+class AxiS2MM(addrT: AxiAddr with AxiWriteAddr, dataT: AxiWriteData, maxTxLen: Int = DefaultMaxTxLen)
+    extends AxiMapper(
+      AxiStream(dataT.dataWidth, userWidth = dataT.userWidth),
+      addrT,
+      dataT,
+      SpecifiedDirection.Output,
+      maxTxLen
+    ) {
+  io.s.ready                  := io.mm.data.ready && state === SendData
+  io.mm.data.bits.data        := io.s.bits.data
+  io.mm.data.bits.user        := io.s.bits.user
+  io.mm.data.bits.last        := io.s.bits.last
   io.mm.data.bits.getStrb.get := io.s.bits.strb
-  io.mm.data.valid := io.s.valid && state === SendData
+  io.mm.data.valid            := io.s.valid && state === SendData
 }
 
 object AxiS2MM {

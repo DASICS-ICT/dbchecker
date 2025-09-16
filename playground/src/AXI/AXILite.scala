@@ -42,11 +42,11 @@ object AxiLiteWriteResp {
 
 class AxiLiteSlave(val addrWidth: Int, val dataWidth: Int) extends Bundle {
   val ar = Flipped(Decoupled(AxiLiteAddr(addrWidth)))
-  val r = Decoupled(AxiLiteReadData(dataWidth))
+  val r  = Decoupled(AxiLiteReadData(dataWidth))
 
   val aw = Flipped(Decoupled(AxiLiteAddr(addrWidth)))
-  val w = Flipped(Decoupled(AxiLiteWriteData(dataWidth)))
-  val b = Decoupled(AxiLiteWriteResp())
+  val w  = Flipped(Decoupled(AxiLiteWriteData(dataWidth)))
+  val b  = Decoupled(AxiLiteWriteResp())
 }
 
 object AxiLiteSlave {
@@ -56,11 +56,11 @@ object AxiLiteSlave {
 
 class AxiLiteMaster(val addrWidth: Int, val dataWidth: Int) extends Bundle {
   val ar = Decoupled(AxiLiteAddr(addrWidth))
-  val r = Flipped(Decoupled(AxiLiteReadData(dataWidth)))
+  val r  = Flipped(Decoupled(AxiLiteReadData(dataWidth)))
 
   val aw = Decoupled(AxiLiteAddr(addrWidth))
-  val w = Decoupled(AxiLiteWriteData(dataWidth))
-  val b = Flipped(AxiLiteWriteResp())
+  val w  = Decoupled(AxiLiteWriteData(dataWidth))
+  val b  = Flipped(AxiLiteWriteResp())
 }
 
 object AxiLiteMaster {

@@ -4,14 +4,14 @@ import chisel3._
 import chisel3.util._
 
 trait QarmaParams {
-  val debug = false
-  val ppldbg = false
+  val debug       = false
+  val ppldbg      = false
   // TODO support super-scalar in both scheduler and SRAM
   val superscalar = false
-  val ds = false
+  val ds          = false
 
-  val n = 64
-  val m = n / 16
+  val n           = 64
+  val m           = n / 16
   val sbox_number = 2
 
   val check_box = Array(
@@ -19,30 +19,84 @@ trait QarmaParams {
     "h270a787275c48d10".U,
     "h5c06a7501b63b2fd".U
   )
-  val alpha = "hC0AC29B7C97C50DD".U
-  val c = VecInit(
-    "h0000000000000000".U, "h13198A2E03707344".U, "hA4093822299F31D0".U, "h082EFA98EC4E6C89".U,
-    "h452821E638D01377".U, "hBE5466CF34E90C6C".U, "h3F84D5B5B5470917".U, "h9216D5D98979FB1B".U
+  val alpha     = "hC0AC29B7C97C50DD".U
+  val c         = VecInit(
+    "h0000000000000000".U,
+    "h13198A2E03707344".U,
+    "hA4093822299F31D0".U,
+    "h082EFA98EC4E6C89".U,
+    "h452821E638D01377".U,
+    "hBE5466CF34E90C6C".U,
+    "h3F84D5B5B5470917".U,
+    "h9216D5D98979FB1B".U
   )
-  val sbox = Array(
-    VecInit(0.U(4.W), 14.U(4.W), 2.U(4.W), 10.U(4.W), 9.U(4.W), 15.U(4.W), 8.U(4.W), 11.U(4.W), 6.U(4.W), 4.U(4.W), 3.U(4.W), 7.U(4.W), 13.U(4.W), 12.U(4.W), 1.U(4.W), 5.U(4.W)),
-    VecInit(10.U(4.W), 13.U(4.W), 14.U(4.W), 6.U(4.W), 15.U(4.W), 7.U(4.W), 3.U(4.W), 5.U(4.W), 9.U(4.W), 8.U(4.W), 0.U(4.W), 12.U(4.W), 11.U(4.W), 1.U(4.W), 2.U(4.W), 4.U(4.W)),
-    VecInit(11.U(4.W), 6.U(4.W), 8.U(4.W), 15.U(4.W), 12.U(4.W), 0.U(4.W), 9.U(4.W), 14.U(4.W), 3.U(4.W), 7.U(4.W), 4.U(4.W), 5.U(4.W), 13.U(4.W), 2.U(4.W), 1.U(4.W), 10.U(4.W))
+  val sbox      = Array(
+    VecInit(
+      0.U(4.W),
+      14.U(4.W),
+      2.U(4.W),
+      10.U(4.W),
+      9.U(4.W),
+      15.U(4.W),
+      8.U(4.W),
+      11.U(4.W),
+      6.U(4.W),
+      4.U(4.W),
+      3.U(4.W),
+      7.U(4.W),
+      13.U(4.W),
+      12.U(4.W),
+      1.U(4.W),
+      5.U(4.W)
+    ),
+    VecInit(
+      10.U(4.W),
+      13.U(4.W),
+      14.U(4.W),
+      6.U(4.W),
+      15.U(4.W),
+      7.U(4.W),
+      3.U(4.W),
+      5.U(4.W),
+      9.U(4.W),
+      8.U(4.W),
+      0.U(4.W),
+      12.U(4.W),
+      11.U(4.W),
+      1.U(4.W),
+      2.U(4.W),
+      4.U(4.W)
+    ),
+    VecInit(
+      11.U(4.W),
+      6.U(4.W),
+      8.U(4.W),
+      15.U(4.W),
+      12.U(4.W),
+      0.U(4.W),
+      9.U(4.W),
+      14.U(4.W),
+      3.U(4.W),
+      7.U(4.W),
+      4.U(4.W),
+      5.U(4.W),
+      13.U(4.W),
+      2.U(4.W),
+      1.U(4.W),
+      10.U(4.W)
+    )
   )
-  val sbox_inv = Array(
+  val sbox_inv  = Array(
     VecInit(0.U, 14.U, 2.U, 10.U, 9.U, 15.U, 8.U, 11.U, 6.U, 4.U, 3.U, 7.U, 13.U, 12.U, 1.U, 5.U),
     VecInit(10.U, 13.U, 14.U, 6.U, 15.U, 7.U, 3.U, 5.U, 9.U, 8.U, 0.U, 12.U, 11.U, 1.U, 2.U, 4.U),
     VecInit(5.U, 14.U, 13.U, 8.U, 10.U, 11.U, 1.U, 9.U, 2.U, 6.U, 15.U, 0.U, 4.U, 12.U, 7.U, 3.U)
   )
-  val t = Array(0, 11, 6, 13, 10, 1, 12, 7, 5, 14, 3, 8, 15, 4, 9, 2)
-  val t_inv = Array(0, 5, 15, 10, 13, 8, 2, 7, 11, 14, 4, 1, 6, 3, 9, 12)
-  val h = Array(6, 5, 14, 15, 0, 1, 2, 3, 7, 12, 13, 4, 8, 9, 10, 11)
-  val h_inv = Array(4, 5, 6, 7, 11, 1, 0, 8, 12, 13, 14, 15, 9, 10, 2, 3)
-  val M = Array(
-    0, 1, 2, 1,
-    1, 0, 1, 2,
-    2, 1, 0, 1,
-    1, 2, 1, 0
+  val t         = Array(0, 11, 6, 13, 10, 1, 12, 7, 5, 14, 3, 8, 15, 4, 9, 2)
+  val t_inv     = Array(0, 5, 15, 10, 13, 8, 2, 7, 11, 14, 4, 1, 6, 3, 9, 12)
+  val h         = Array(6, 5, 14, 15, 0, 1, 2, 3, 7, 12, 13, 4, 8, 9, 10, 11)
+  val h_inv     = Array(4, 5, 6, 7, 11, 1, 0, 8, 12, 13, 14, 15, 9, 10, 2, 3)
+  val M         = Array(
+    0, 1, 2, 1, 1, 0, 1, 2, 2, 1, 0, 1, 1, 2, 1, 0
   )
 
   def lfsr_inv_operation(operand: UInt): UInt = {
@@ -64,20 +118,24 @@ trait QarmaParams {
   }
 
   val code_map_width = 2
-  val code_map = Map("end" -> 0.U(code_map_width.W), "forward" -> 1.U(code_map_width.W),
-    "reflect" -> 2.U(code_map_width.W), "backward" -> 3.U(code_map_width.W))
+  val code_map       = Map(
+    "end"      -> 0.U(code_map_width.W),
+    "forward"  -> 1.U(code_map_width.W),
+    "reflect"  -> 2.U(code_map_width.W),
+    "backward" -> 3.U(code_map_width.W)
+  )
 }
 
 class MixColumnOperatorIO extends Bundle {
-  val in = Input(UInt(64.W))
+  val in  = Input(UInt(64.W))
   val out = Output(UInt(64.W))
 }
 
 class OperatorIO extends Bundle {
-  val is = Input(UInt(64.W))
-  val tk = Input(UInt(64.W))
+  val is         = Input(UInt(64.W))
+  val tk         = Input(UInt(64.W))
   val round_zero = Input(Bool())
-  val out = Output(UInt(64.W))
+  val out        = Output(UInt(64.W))
 }
 
 class TweakIO extends Bundle {
@@ -86,31 +144,31 @@ class TweakIO extends Bundle {
 }
 
 class DataBundle(max_round: Int, step_len: Int) extends Bundle with QarmaParams {
-  val code = UInt((code_map_width * ((max_round + step_len - 1) / step_len * 2 + 2)).W)
+  val code     = UInt((code_map_width * ((max_round + step_len - 1) / step_len * 2 + 2)).W)
   val step_end = UInt((log2Ceil(step_len) * ((max_round + step_len - 1) / step_len * 2 + 2)).W)
-  val is = UInt(64.W)
-  val tk = UInt(64.W)
-  val k0 = UInt(64.W)
-  val k1 = UInt(64.W)
-  val w0 = UInt(64.W)
-  val w1 = UInt(64.W)
+  val is       = UInt(64.W)
+  val tk       = UInt(64.W)
+  val k0       = UInt(64.W)
+  val k1       = UInt(64.W)
+  val w0       = UInt(64.W)
+  val w1       = UInt(64.W)
 }
 
 class MetaBundle(max_round: Int) extends Bundle with QarmaParams {
-  val valid = Bool()
-  val done = Bool()
+  val valid   = Bool()
+  val done    = Bool()
   val pointer = UInt(log2Ceil(code_map_width * (max_round * 2 + 2)).W)
 }
 
-class QarmaInputBundle extends Bundle{ 
-  val encrypt = Input(Bool())
-  val keyh = Input(UInt(64.W))
-  val keyl = Input(UInt(64.W))
-  val tweak = Input(UInt(64.W))
-  val text = Input(UInt(64.W))
+class QarmaInputBundle  extends Bundle {
+  val encrypt      = Input(Bool())
+  val keyh         = Input(UInt(64.W))
+  val keyl         = Input(UInt(64.W))
+  val tweak        = Input(UInt(64.W))
+  val text         = Input(UInt(64.W))
   val actual_round = Input(UInt(3.W))
 }
-class QarmaOutputBundle extends Bundle{ 
+class QarmaOutputBundle extends Bundle {
   val result = Output(UInt(64.W))
 }
 
@@ -118,8 +176,11 @@ class MixColumnOperator extends Module with QarmaParams {
   val io = IO(new MixColumnOperatorIO)
 
   val result_vec = Wire(Vec(16, UInt(4.W)))
-  val temp_vec = Wire(Vec(16, Vec(4, UInt(4.W))))
-  for (x <- 0 until 4; y <- 0 until 4) {
+  val temp_vec   = Wire(Vec(16, Vec(4, UInt(4.W))))
+  for {
+    x <- 0 until 4
+    y <- 0 until 4
+  } {
     for (j <- 0 until 4) {
       val a = io.in.asTypeOf(Vec(16, UInt(4.W)))(15 - (4 * j + y)).asUInt
       val b = M(4 * x + j)
@@ -137,11 +198,11 @@ class MixColumnOperator extends Module with QarmaParams {
 class ForwardOperator extends Module with QarmaParams {
   val io = IO(new OperatorIO)
 
-  val new_is = io.is ^ io.tk
-  val mix_column_is = Wire(UInt(64.W))
-  val perm_vec = Wire(Vec(16, UInt(4.W)))
-  val result_vec = Wire(Vec(16, UInt(4.W)))
-  val sbox_prev_is = Mux(io.round_zero, new_is, mix_column_is)
+  val new_is              = io.is ^ io.tk
+  val mix_column_is       = Wire(UInt(64.W))
+  val perm_vec            = Wire(Vec(16, UInt(4.W)))
+  val result_vec          = Wire(Vec(16, UInt(4.W)))
+  val sbox_prev_is        = Mux(io.round_zero, new_is, mix_column_is)
   val mix_column_operator = Module(new MixColumnOperator)
 
   for (i <- 0 until 16) {
@@ -149,7 +210,7 @@ class ForwardOperator extends Module with QarmaParams {
   }
 
   mix_column_operator.io.in := perm_vec.asTypeOf(UInt(64.W))
-  mix_column_is := mix_column_operator.io.out
+  mix_column_is             := mix_column_operator.io.out
 
   for (i <- 0 until 16) {
     result_vec(15 - i) := sbox(sbox_number)(sbox_prev_is.asTypeOf(Vec(16, UInt(4.W)))(15 - i))
@@ -161,10 +222,10 @@ class ForwardOperator extends Module with QarmaParams {
 class BackwardOperator extends Module with QarmaParams {
   val io = IO(new OperatorIO)
 
-  val inv_sbox_is = Wire(Vec(16, UInt(4.W)))
-  val mix_column_is = Wire(UInt(64.W))
-  val result_vec = Wire(Vec(16, UInt(4.W)))
-  val perm_vec = Wire(Vec(16, UInt(4.W)))
+  val inv_sbox_is         = Wire(Vec(16, UInt(4.W)))
+  val mix_column_is       = Wire(UInt(64.W))
+  val result_vec          = Wire(Vec(16, UInt(4.W)))
+  val perm_vec            = Wire(Vec(16, UInt(4.W)))
   val mix_column_operator = Module(new MixColumnOperator)
 
   for (i <- 0 until 16) {
@@ -172,21 +233,21 @@ class BackwardOperator extends Module with QarmaParams {
   }
 
   mix_column_operator.io.in := inv_sbox_is.asTypeOf(UInt(64.W))
-  mix_column_is := mix_column_operator.io.out
+  mix_column_is             := mix_column_operator.io.out
 
   for (i <- 0 until 16) {
     perm_vec(15 - i) := mix_column_is.asTypeOf(Vec(16, UInt(4.W)))(15 - t_inv(i))
   }
 
   result_vec := Mux(io.round_zero, inv_sbox_is, perm_vec)
-  io.out := result_vec.asTypeOf(UInt(64.W)) ^ io.tk
+  io.out     := result_vec.asTypeOf(UInt(64.W)) ^ io.tk
 }
 
 class ForwardTweakUpdateOperator extends Module with QarmaParams {
   val io = IO(new TweakIO)
 
   val result_vec = Wire(Vec(16, UInt(4.W)))
-  val temp_vec = Wire(Vec(16, UInt(4.W)))
+  val temp_vec   = Wire(Vec(16, UInt(4.W)))
   for (i <- 0 until 16) {
     temp_vec(15 - i) := io.old_tk.asTypeOf(Vec(16, UInt(4.W)))(15 - h(i))
   }
@@ -205,12 +266,14 @@ class ForwardTweakUpdateOperator extends Module with QarmaParams {
 class BackwardTweakUpdateOperator extends Module with QarmaParams {
   val io = IO(new TweakIO)
 
-  val mtk = Wire(Vec(16, UInt(4.W)))
+  val mtk        = Wire(Vec(16, UInt(4.W)))
   val result_vec = Wire(Vec(16, UInt(4.W)))
   for (i <- 0 until 16) {
     val tk_base_index = (15 - i) * 4
-    val step_result = if (List(0, 1, 3, 4, 8, 11, 13).indexOf(i) != -1)
-      lfsr_inv_operation(io.old_tk(tk_base_index + 3, tk_base_index)) else io.old_tk(tk_base_index + 3, tk_base_index)
+    val step_result   =
+      if (List(0, 1, 3, 4, 8, 11, 13).indexOf(i) != -1)
+        lfsr_inv_operation(io.old_tk(tk_base_index + 3, tk_base_index))
+      else io.old_tk(tk_base_index + 3, tk_base_index)
     mtk(15 - i) := step_result
   }
   for (i <- 0 until 16) {
@@ -221,23 +284,23 @@ class BackwardTweakUpdateOperator extends Module with QarmaParams {
 
 class PseudoReflectOperator extends Module with QarmaParams {
   val io = IO(new Bundle {
-    val is = Input(UInt(64.W))
+    val is  = Input(UInt(64.W))
     val key = Input(UInt(64.W))
     val out = Output(UInt(64.W))
   })
 
-  val perm_vec = Wire(Vec(16, UInt(4.W)))
-  val mix_column_is = Wire(UInt(64.W))
+  val perm_vec            = Wire(Vec(16, UInt(4.W)))
+  val mix_column_is       = Wire(UInt(64.W))
   val mix_column_operator = Module(new MixColumnOperator)
-  val result_vec = Wire(Vec(16, UInt(4.W)))
-  val tweakey_is = Wire(Vec(16, UInt(4.W)))
+  val result_vec          = Wire(Vec(16, UInt(4.W)))
+  val tweakey_is          = Wire(Vec(16, UInt(4.W)))
 
   for (i <- 0 until 16) {
     perm_vec(15 - i) := io.is.asTypeOf(Vec(16, UInt(4.W)))(15 - t(i))
   }
 
   mix_column_operator.io.in := perm_vec.asTypeOf(UInt(64.W))
-  mix_column_is := mix_column_operator.io.out
+  mix_column_is             := mix_column_operator.io.out
 
   for (i <- 0 until 16) {
     val key_base = 4 * (15 - i)
@@ -253,32 +316,33 @@ class PseudoReflectOperator extends Module with QarmaParams {
 }
 
 class ExecutionContext(max_round: Int = 7, depth: Int = 0, port: Int = 0, step_len: Int)
-  extends Module with QarmaParams {
+    extends Module
+    with QarmaParams {
 
   if (port != 1 && port != 2 && port != 0) {
     println("Variable read_port in ExecutionContext should be in [1, 2].")
     sys.exit(-1)
   }
 
-  val slot_depth = if (depth == 0) {
+  val slot_depth      = if (depth == 0) {
     if (superscalar) 2 else 1
   } else depth
   val read_write_port = if (port == 0) slot_depth else port
   // forward * mr + backward * mr + reflect + end
-  val code_width = code_map_width * ((max_round + step_len - 1) / step_len * 2 + 2)
-  val valid_width = 1
-  val done_width = 1
-  val data_width = 64 * 6
-  val pointer_width = log2Ceil(code_width)
+  val code_width      = code_map_width * ((max_round + step_len - 1) / step_len * 2 + 2)
+  val valid_width     = 1
+  val done_width      = 1
+  val data_width      = 64 * 6
+  val pointer_width   = log2Ceil(code_width)
   // code width + is tk w0 w1 k0 k1
   val data_slot_width = new DataBundle(max_round, step_len).getWidth
   // valid + done + pointer
   val meta_slot_width = new MetaBundle(max_round).getWidth
 
-  val input = IO(new Bundle {
+  val input  = IO(new Bundle {
     val new_data = Input(Vec(slot_depth, new DataBundle(max_round, step_len)))
     val new_meta = Input(Vec(slot_depth, new MetaBundle(max_round)))
-    val update = Input(Vec(slot_depth, Bool()))
+    val update   = Input(Vec(slot_depth, Bool()))
   })
   val output = IO(new Bundle {
     val old_data = Output(Vec(slot_depth, new DataBundle(max_round, step_len)))
@@ -302,9 +366,9 @@ class ExecutionContext(max_round: Int = 7, depth: Int = 0, port: Int = 0, step_l
   }
 }
 abstract class QarmaBase(max_round: Int = 7) extends Module with QarmaParams {
-  val input = IO(Flipped(Decoupled(new QarmaInputBundle)))
-  val output = IO(Decoupled(new QarmaOutputBundle))
-    // Step 1 ---- Generate Key
+  val input      = IO(Flipped(Decoupled(new QarmaInputBundle)))
+  val output     = IO(Decoupled(new QarmaOutputBundle))
+  // Step 1 ---- Generate Key
   val mix_column = Module(new MixColumnOperator)
   mix_column.io.in := input.bits.keyl
   val w0 = Mux(input.bits.encrypt, input.bits.keyh, o_operation(input.bits.keyh))
@@ -313,15 +377,15 @@ abstract class QarmaBase(max_round: Int = 7) extends Module with QarmaParams {
   val k1 = Mux(input.bits.encrypt, input.bits.keyl, mix_column.io.out)
 
   // Step 2 ---- Define Hardware
-  val is_vec = Wire(Vec(max_round * 2 + 4, UInt(64.W)))
-  val tk_vec = Wire(Vec(max_round * 2 + 4, UInt(64.W)))
-  val forward_operator_vec = Array.fill(max_round + 1)(Module(new ForwardOperator).io)
-  val forward_tweak_update_operator_vec = Array.fill(max_round)(Module(new ForwardTweakUpdateOperator).io)
-  val reflector = Module(new PseudoReflectOperator)
-  val backward_operator_vec = Array.fill(max_round + 1)(Module(new BackwardOperator).io)
+  val is_vec                             = Wire(Vec(max_round * 2 + 4, UInt(64.W)))
+  val tk_vec                             = Wire(Vec(max_round * 2 + 4, UInt(64.W)))
+  val forward_operator_vec               = Array.fill(max_round + 1)(Module(new ForwardOperator).io)
+  val forward_tweak_update_operator_vec  = Array.fill(max_round)(Module(new ForwardTweakUpdateOperator).io)
+  val reflector                          = Module(new PseudoReflectOperator)
+  val backward_operator_vec              = Array.fill(max_round + 1)(Module(new BackwardOperator).io)
   val backward_tweak_update_operator_vec = Array.fill(max_round)(Module(new BackwardTweakUpdateOperator).io)
-  var wire_index = 0
-  var module_index = 0
+  var wire_index                         = 0
+  var module_index                       = 0
 }
 
 class QarmaSingleCycle(max_round: Int = 7) extends QarmaBase {
@@ -331,40 +395,46 @@ class QarmaSingleCycle(max_round: Int = 7) extends QarmaBase {
   log(1, is_vec(wire_index), tk_vec(wire_index))
   tk_vec(wire_index) := input.bits.tweak
   for (i <- 0 until max_round) {
-    forward_operator_vec(module_index).is := is_vec(wire_index)
-    forward_operator_vec(module_index).tk := tk_vec(wire_index) ^ k0 ^ c(i.asUInt)
-    forward_operator_vec(module_index).round_zero := i.asUInt === 0.U
+    forward_operator_vec(module_index).is                  := is_vec(wire_index)
+    forward_operator_vec(module_index).tk                  := tk_vec(wire_index) ^ k0 ^ c(i.asUInt)
+    forward_operator_vec(module_index).round_zero          := i.asUInt === 0.U
     forward_tweak_update_operator_vec(module_index).old_tk := tk_vec(wire_index)
     wire_index = wire_index + 1
-    is_vec(wire_index) := Mux(i.asUInt < input.bits.actual_round,
-      forward_operator_vec(module_index).out, is_vec(wire_index - 1))
-    tk_vec(wire_index) := Mux(i.asUInt < input.bits.actual_round,
-      forward_tweak_update_operator_vec(module_index).new_tk, tk_vec(wire_index - 1))
+    is_vec(wire_index)                                     := Mux(
+      i.asUInt < input.bits.actual_round,
+      forward_operator_vec(module_index).out,
+      is_vec(wire_index - 1)
+    )
+    tk_vec(wire_index)                                     := Mux(
+      i.asUInt < input.bits.actual_round,
+      forward_tweak_update_operator_vec(module_index).new_tk,
+      tk_vec(wire_index - 1)
+    )
     module_index = module_index + 1
     log(2 + i, is_vec(wire_index), tk_vec(wire_index))
   }
 
   // Step 4 ---- Reflect
-  forward_operator_vec(module_index).is := is_vec(wire_index)
-  forward_operator_vec(module_index).tk := tk_vec(wire_index) ^ w1
-  forward_operator_vec(module_index).round_zero := false.B
+  forward_operator_vec(module_index).is          := is_vec(wire_index)
+  forward_operator_vec(module_index).tk          := tk_vec(wire_index) ^ w1
+  forward_operator_vec(module_index).round_zero  := false.B
   wire_index = wire_index + 1
-  is_vec(wire_index) := forward_operator_vec(module_index).out
-  tk_vec(wire_index) := tk_vec(wire_index - 1)
+  is_vec(wire_index)                             := forward_operator_vec(module_index).out
+  tk_vec(wire_index)                             := tk_vec(wire_index - 1)
   log(max_round + 2, is_vec(wire_index), tk_vec(wire_index))
   module_index = max_round
-  reflector.io.is := is_vec(wire_index)
-  reflector.io.key := k1
+  reflector.io.is                                := is_vec(wire_index)
+  reflector.io.key                               := k1
   wire_index = wire_index + 1
-  is_vec(wire_index) := reflector.io.out
-  tk_vec(wire_index) := tk_vec(wire_index - 1)
+  is_vec(wire_index)                             := reflector.io.out
+  tk_vec(wire_index)                             := tk_vec(wire_index - 1)
   log(max_round + 3, is_vec(wire_index), tk_vec(wire_index))
-  backward_operator_vec(module_index).is := is_vec(wire_index)
-  backward_operator_vec(module_index).tk := tk_vec(wire_index) ^ w0
+  backward_operator_vec(module_index).is         := is_vec(wire_index)
+  backward_operator_vec(module_index).tk         := tk_vec(wire_index) ^ w0
   backward_operator_vec(module_index).round_zero := false.B
   wire_index = wire_index + 1
-  is_vec(wire_index) := backward_operator_vec(module_index).out
-  tk_vec(wire_index) := tk_vec(wire_index - 1)
+  is_vec(wire_index)                             := backward_operator_vec(module_index).out
+  tk_vec(wire_index)                             := tk_vec(wire_index - 1)
   log(max_round + 4, is_vec(wire_index), tk_vec(wire_index))
   module_index = 0
 
@@ -372,30 +442,36 @@ class QarmaSingleCycle(max_round: Int = 7) extends QarmaBase {
   for (i <- 0 until max_round) {
     val j = max_round - 1 - i
     backward_tweak_update_operator_vec(module_index).old_tk := tk_vec(wire_index)
-    backward_operator_vec(module_index).is := is_vec(wire_index)
+    backward_operator_vec(module_index).is                  := is_vec(wire_index)
     wire_index = wire_index + 1
-    backward_operator_vec(module_index).tk := k0 ^ tk_vec(wire_index) ^ c(j.asUInt) ^ alpha.asUInt
-    backward_operator_vec(module_index).round_zero := i.asUInt + 1.U === max_round.asUInt
-    tk_vec(wire_index) := Mux(j.asUInt < input.bits.actual_round,
-      backward_tweak_update_operator_vec(module_index).new_tk, tk_vec(wire_index - 1))
-    is_vec(wire_index) := Mux(j.asUInt < input.bits.actual_round,
-      backward_operator_vec(module_index).out, is_vec(wire_index - 1))
+    backward_operator_vec(module_index).tk                  := k0 ^ tk_vec(wire_index) ^ c(j.asUInt) ^ alpha.asUInt
+    backward_operator_vec(module_index).round_zero          := i.asUInt + 1.U === max_round.asUInt
+    tk_vec(wire_index)                                      := Mux(
+      j.asUInt < input.bits.actual_round,
+      backward_tweak_update_operator_vec(module_index).new_tk,
+      tk_vec(wire_index - 1)
+    )
+    is_vec(wire_index)                                      := Mux(
+      j.asUInt < input.bits.actual_round,
+      backward_operator_vec(module_index).out,
+      is_vec(wire_index - 1)
+    )
     module_index = module_index + 1
     log(max_round + 5 + i, is_vec(wire_index), tk_vec(wire_index))
   }
 
   output.bits.result := is_vec(wire_index) ^ w1
-  output.valid := true.B
-  input.ready := true.B
+  output.valid       := true.B
+  input.ready        := true.B
 }
 
 class QarmaMultiCycle(max_round: Int = 7) extends QarmaBase {
 
   // Step 2 ---- Define Hardware
-  val temp_index = new Array[Int](3)
-  val busy_table = RegInit(VecInit(Seq.fill(4)(false.B)))
-  val stall_table = Wire(Vec(4, Bool()))
-  val round_table = RegInit(VecInit(Seq.fill(4)(0.U(3.W))))
+  val temp_index    = new Array[Int](3)
+  val busy_table    = RegInit(VecInit(Seq.fill(4)(false.B)))
+  val stall_table   = Wire(Vec(4, Bool()))
+  val round_table   = RegInit(VecInit(Seq.fill(4)(0.U(3.W))))
   val internal_regs = RegInit(VecInit(Seq.fill(4)(0.U((64 * 6).W))))
 
   // Step 3 ---- Forward Internal-Regs is/tk/w0/k0/w1/k1
@@ -403,41 +479,47 @@ class QarmaMultiCycle(max_round: Int = 7) extends QarmaBase {
   log(1, is_vec(wire_index), tk_vec(wire_index))
   tk_vec(wire_index) := internal_regs(0)(64 * 5 - 1, 64 * 4)
   for (i <- 0 until max_round) {
-    forward_operator_vec(module_index).is := is_vec(wire_index)
-    forward_operator_vec(module_index).tk := tk_vec(wire_index) ^ internal_regs(0)(64 * 3 - 1, 64 * 2) ^ c(i.asUInt)
-    forward_operator_vec(module_index).round_zero := i.asUInt === 0.U
+    forward_operator_vec(module_index).is                  := is_vec(wire_index)
+    forward_operator_vec(module_index).tk                  := tk_vec(wire_index) ^ internal_regs(0)(64 * 3 - 1, 64 * 2) ^ c(i.asUInt)
+    forward_operator_vec(module_index).round_zero          := i.asUInt === 0.U
     forward_tweak_update_operator_vec(module_index).old_tk := tk_vec(wire_index)
     wire_index = wire_index + 1
-    is_vec(wire_index) := Mux(i.asUInt < input.bits.actual_round,
-      forward_operator_vec(module_index).out, is_vec(wire_index - 1))
-    tk_vec(wire_index) := Mux(i.asUInt < input.bits.actual_round,
-      forward_tweak_update_operator_vec(module_index).new_tk, tk_vec(wire_index - 1))
+    is_vec(wire_index)                                     := Mux(
+      i.asUInt < input.bits.actual_round,
+      forward_operator_vec(module_index).out,
+      is_vec(wire_index - 1)
+    )
+    tk_vec(wire_index)                                     := Mux(
+      i.asUInt < input.bits.actual_round,
+      forward_tweak_update_operator_vec(module_index).new_tk,
+      tk_vec(wire_index - 1)
+    )
     module_index = module_index + 1
     log(2 + i, is_vec(wire_index), tk_vec(wire_index))
   }
 
   // Step 4 ---- Reflect
   temp_index(0) = wire_index
-  forward_operator_vec(module_index).is := internal_regs(1)(64 * 6 - 1, 64 * 5)
-  forward_operator_vec(module_index).tk := internal_regs(1)(64 * 5 - 1, 64 * 4) ^ internal_regs(1)(64 * 2 - 1, 64 * 1)
-  forward_operator_vec(module_index).round_zero := false.B
+  forward_operator_vec(module_index).is          := internal_regs(1)(64 * 6 - 1, 64 * 5)
+  forward_operator_vec(module_index).tk          := internal_regs(1)(64 * 5 - 1, 64 * 4) ^ internal_regs(1)(64 * 2 - 1, 64 * 1)
+  forward_operator_vec(module_index).round_zero  := false.B
   wire_index = wire_index + 1
-  is_vec(wire_index) := forward_operator_vec(module_index).out
-  tk_vec(wire_index) := internal_regs(1)(64 * 5 - 1, 64 * 4)
+  is_vec(wire_index)                             := forward_operator_vec(module_index).out
+  tk_vec(wire_index)                             := internal_regs(1)(64 * 5 - 1, 64 * 4)
   log(max_round + 2, is_vec(wire_index), tk_vec(wire_index))
   module_index = max_round
-  reflector.io.is := is_vec(wire_index)
-  reflector.io.key := internal_regs(1)(64 * 1 - 1, 64 * 0)
+  reflector.io.is                                := is_vec(wire_index)
+  reflector.io.key                               := internal_regs(1)(64 * 1 - 1, 64 * 0)
   wire_index = wire_index + 1
-  is_vec(wire_index) := reflector.io.out
-  tk_vec(wire_index) := tk_vec(wire_index - 1)
+  is_vec(wire_index)                             := reflector.io.out
+  tk_vec(wire_index)                             := tk_vec(wire_index - 1)
   log(max_round + 3, is_vec(wire_index), tk_vec(wire_index))
-  backward_operator_vec(module_index).is := is_vec(wire_index)
-  backward_operator_vec(module_index).tk := tk_vec(wire_index) ^ internal_regs(1)(64 * 4 - 1, 64 * 3)
+  backward_operator_vec(module_index).is         := is_vec(wire_index)
+  backward_operator_vec(module_index).tk         := tk_vec(wire_index) ^ internal_regs(1)(64 * 4 - 1, 64 * 3)
   backward_operator_vec(module_index).round_zero := false.B
   wire_index = wire_index + 1
-  is_vec(wire_index) := backward_operator_vec(module_index).out
-  tk_vec(wire_index) := tk_vec(wire_index - 1)
+  is_vec(wire_index)                             := backward_operator_vec(module_index).out
+  tk_vec(wire_index)                             := tk_vec(wire_index - 1)
   log(max_round + 4, is_vec(wire_index), tk_vec(wire_index))
   module_index = 0
 
@@ -445,17 +527,31 @@ class QarmaMultiCycle(max_round: Int = 7) extends QarmaBase {
   temp_index(1) = wire_index
   for (i <- 0 until max_round) {
     val j = max_round - 1 - i
-    backward_tweak_update_operator_vec(module_index).old_tk := Mux(j.asUInt + 1.U === input.bits.actual_round,
-      internal_regs(2)(64 * 5 - 1, 64 * 4), tk_vec(wire_index))
-    backward_operator_vec(module_index).is := Mux(j.asUInt + 1.U === input.bits.actual_round,
-      internal_regs(2)(64 * 6 - 1, 64 * 5), is_vec(wire_index))
+    backward_tweak_update_operator_vec(module_index).old_tk := Mux(
+      j.asUInt + 1.U === input.bits.actual_round,
+      internal_regs(2)(64 * 5 - 1, 64 * 4),
+      tk_vec(wire_index)
+    )
+    backward_operator_vec(module_index).is                  := Mux(
+      j.asUInt + 1.U === input.bits.actual_round,
+      internal_regs(2)(64 * 6 - 1, 64 * 5),
+      is_vec(wire_index)
+    )
     wire_index = wire_index + 1
-    backward_operator_vec(module_index).tk := internal_regs(2)(64 * 3 - 1, 64 * 2) ^ tk_vec(wire_index) ^ c(j.asUInt) ^ alpha.asUInt
-    backward_operator_vec(module_index).round_zero := i.asUInt + 1.U === max_round.asUInt
-    tk_vec(wire_index) := Mux(j.asUInt < input.bits.actual_round,
-      backward_tweak_update_operator_vec(module_index).new_tk, tk_vec(wire_index - 1))
-    is_vec(wire_index) := Mux(j.asUInt < input.bits.actual_round,
-      backward_operator_vec(module_index).out, is_vec(wire_index - 1))
+    backward_operator_vec(module_index).tk                  := internal_regs(2)(64 * 3 - 1, 64 * 2) ^ tk_vec(wire_index) ^ c(
+      j.asUInt
+    ) ^ alpha.asUInt
+    backward_operator_vec(module_index).round_zero          := i.asUInt + 1.U === max_round.asUInt
+    tk_vec(wire_index)                                      := Mux(
+      j.asUInt < input.bits.actual_round,
+      backward_tweak_update_operator_vec(module_index).new_tk,
+      tk_vec(wire_index - 1)
+    )
+    is_vec(wire_index)                                      := Mux(
+      j.asUInt < input.bits.actual_round,
+      backward_operator_vec(module_index).out,
+      is_vec(wire_index - 1)
+    )
     module_index = module_index + 1
     log(max_round + 5 + i, is_vec(wire_index), tk_vec(wire_index))
   }
@@ -471,17 +567,19 @@ class QarmaMultiCycle(max_round: Int = 7) extends QarmaBase {
     }
     if (i == 0) {
       when(!stall_table(0)) {
-        busy_table(0) := input.valid
-        round_table(0) := input.bits.actual_round
-        internal_regs(0) := Cat(input.bits.text ^ w0, input.bits.tweak,
-          w0, k0, w1, k1)
+        busy_table(0)    := input.valid
+        round_table(0)   := input.bits.actual_round
+        internal_regs(0) := Cat(input.bits.text ^ w0, input.bits.tweak, w0, k0, w1, k1)
       }
     } else {
       when(!stall_table(i)) {
-        busy_table(i) := busy_table(i - 1)
-        round_table(i) := round_table(i - 1)
-        internal_regs(i) := Cat(is_vec(temp_index(i - 1)), tk_vec(temp_index(i - 1)),
-          internal_regs(i - 1)(64 * 4 - 1, 0))
+        busy_table(i)    := busy_table(i - 1)
+        round_table(i)   := round_table(i - 1)
+        internal_regs(i) := Cat(
+          is_vec(temp_index(i - 1)),
+          tk_vec(temp_index(i - 1)),
+          internal_regs(i - 1)(64 * 4 - 1, 0)
+        )
       }
     }
   }
@@ -494,41 +592,41 @@ class QarmaMultiCycle(max_round: Int = 7) extends QarmaBase {
   // }
 
   output.bits.result := internal_regs(3)(64 * 6 - 1, 64 * 5) ^ internal_regs(3)(64 * 2 - 1, 64 * 1)
-  output.valid := busy_table(3)
-  input.ready := !stall_table(0)
+  output.valid       := busy_table(3)
+  input.ready        := !stall_table(0)
 }
 
 class QarmaDummy extends Module with QarmaParams {
 
-  val input = IO(Flipped(Decoupled(new QarmaInputBundle)))
+  val input  = IO(Flipped(Decoupled(new QarmaInputBundle)))
   val output = IO(Decoupled(new QarmaOutputBundle))
 
-  val valid_reg = RegInit(false.B)
-  val text_reg = RegInit(0.U(64.W))
-  val key_reg = RegInit(0.U(128.W))
-  val tweak_reg = RegInit(0.U(64.W))
+  val valid_reg        = RegInit(false.B)
+  val text_reg         = RegInit(0.U(64.W))
+  val key_reg          = RegInit(0.U(128.W))
+  val tweak_reg        = RegInit(0.U(64.W))
   val actual_round_reg = RegInit(0.U(3.W))
-  val wait_timer = RegInit(0.U(4.W))
+  val wait_timer       = RegInit(0.U(4.W))
 
-  when (input.valid && input.ready) {
-    wait_timer := 0.U
-    valid_reg := true.B
-    text_reg := input.bits.text
-    tweak_reg := input.bits.tweak
+  when(input.valid && input.ready) {
+    wait_timer       := 0.U
+    valid_reg        := true.B
+    text_reg         := input.bits.text
+    tweak_reg        := input.bits.tweak
     actual_round_reg := input.bits.actual_round
-    key_reg := Cat(input.bits.keyh, input.bits.keyl)
+    key_reg          := Cat(input.bits.keyh, input.bits.keyl)
   }
-  .elsewhen (output.valid && output.ready) {
-    wait_timer := 0.U
-    valid_reg := false.B
-  }
-  .elsewhen (wait_timer < actual_round_reg) {
-    wait_timer := wait_timer + 1.U
-  }
+    .elsewhen(output.valid && output.ready) {
+      wait_timer := 0.U
+      valid_reg  := false.B
+    }
+    .elsewhen(wait_timer < actual_round_reg) {
+      wait_timer := wait_timer + 1.U
+    }
 
   output.bits.result := text_reg ^ key_reg(63, 0) ^ key_reg(127, 64) ^ tweak_reg
-  output.valid := valid_reg & wait_timer === actual_round_reg
-  input.ready := !valid_reg
+  output.valid       := valid_reg & wait_timer === actual_round_reg
+  input.ready        := !valid_reg
 
   // if (debug) {
   //   printf("[QarmaDummy] input %x\n", input.bits.text)
