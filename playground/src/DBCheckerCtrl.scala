@@ -139,7 +139,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
 
   val free_sram_wait = RegInit(false.B)
   // valid bitmap for DBTE entries
-  val dbte_v_bitmap  = RegInit(RegInit(0.U(dbte_num.W)))
+  val dbte_v_bitmap  = RegInit(0.U(dbte_num.W))
   dbte_v_bm := dbte_v_bitmap
 
   // DBTE alloc reg
