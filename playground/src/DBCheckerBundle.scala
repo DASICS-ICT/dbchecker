@@ -5,7 +5,7 @@ import chisel3.util._
 import axi._
 trait DBCheckerConst {
   val debug  = true
-  val RegNum = 8 // total register num
+  val RegNum = 16 // total register num
 
   val magic_num = 0xcb // 11101011
   val dbte_num  = 4096
@@ -13,20 +13,33 @@ trait DBCheckerConst {
   // reg index (actual addr is 8 byte aligned, r/w lo-hi)
   // checker enable register  (0x0, RW) : checker enable / disable register; reserved
   val chk_en       = 0x0 // 0x00
+
   // checker command register (0x1, R, W only when not valid) : used to alloc / free metadata
   val chk_cmd      = 0x1 // 0x08
-  // checker result register (0x2, RO) : when alloc, read this register to get encrypted pointer
-  val chk_res      = 0x2 // 0x10
-  // checker key lowbit register (0x3, WO, if debug RW)
-  val chk_keyl     = 0x3 // 0x18
-  // checker key highbit register (0x4, WO, if debug RW)
-  val chk_keyh     = 0x4 // 0x20
-  // checker error counter register (0x5, RO)
-  val chk_err_cnt  = 0x5 // 0x28
-  // checker error info register (0x6, RO)
-  val chk_err_info = 0x6 // 0x30
-  // checker error metadata register (0x7, RO)
-  val chk_err_mtdt = 0x7 // 0x38
+
+  // checker metadata low 64 bits (0x2, RW), for mtdt low 64 bits
+  val mtdt_lo = 0x2 // 0x10
+
+  // checker metadata high 64 bits (0x3, RW), for mtdt high 64 bits
+  val mtdt_hi = 0x3 // 0x18
+
+  // checker result register (0x4, RO) : when alloc, read this register to get encrypted pointer
+  val chk_res      = 0x4 // 0x20
+
+  // checker key lowbit register (0x5, WO, if debug RW)
+  val chk_keyl     = 0x5 // 0x28
+
+  // checker key highbit register (0x6, WO, if debug RW)
+  val chk_keyh     = 0x6 // 0x30
+
+  // checker error counter register (0x7, RO)
+  val chk_err_cnt  = 0x7 // 0x38
+
+  // checker error info register (0x8, RO)
+  val chk_err_info = 0x8 // 0x40
+
+  // checker error metadata register (0x9, RO)
+  val chk_err_mtdt = 0x9 // 0x48
 
   def cmd_op_free    = 0.U(2.W)
   def cmd_op_alloc   = 1.U(2.W)
@@ -38,18 +51,10 @@ trait DBCheckerConst {
   def cmd_status_ok    = 2.U(2.W)
   def cmd_status_error = 3.U(2.W)
 
-  def mtdt_typ_s = 0.U(1.W)
-  def mtdt_typ_l = 1.U(1.W)
-
   def err_bnd_farea = 0.U(2.W)
   def err_bnd_ftype = 1.U(2.W)
   def err_mtdt_finv = 2.U(2.W)
-  def err_mtdt_fmn  = 3.U(2.W)
 }
-
-// ------------------------------------------------------------------------------------------------------------------
-// |magic_num(4)|id(8)|reservec(1)|type(1)|w(1)|r(1)|limit_offset(s:16, l:32)|limit_base(s:32, l:16(low 16 bit = 0))|
-// ------------------------------------------------------------------------------------------------------------------
 
 class DBCheckerEnCtl extends Bundle with DBCheckerConst{
   val reserved = UInt(58.W)
@@ -61,33 +66,19 @@ class DBCheckerEnCtl extends Bundle with DBCheckerConst{
   val func_en   = Bool() // 0: disable, 1: enable
 }
 class DBCheckerMtdt extends Bundle with DBCheckerConst {
-  val mn       = UInt(8.W)
-  val id       = UInt(4.W)
-  val reserved = UInt(1.W)
-  val typ      = UInt(1.W)
   val w        = UInt(1.W)
   val r        = UInt(1.W)
-  val bnd      = UInt(48.W)
+  val off_len  = UInt(5.W)
+  val id       = UInt(25.W)
+  val up_bnd   = UInt(48.W)
+  val lo_bnd   = UInt(48.W)
 
-  def get_index:           UInt = {
-    this.asUInt(63, 64 - log2Up(dbte_num))
+  def get_modifier: UInt = {
+    val totalBits = this.asUInt
+    val hi64 = totalBits(127, 64)
+    val lo64 = totalBits(63, 0)
+    hi64 ^ lo64
   }
-  def get_ptr(base: UInt): UInt = {
-    Cat(this.asUInt(63, 32), base)
-  }
-  def get_dbte:            UInt = {
-    this.asUInt(31, 0)
-  }
-}
-
-class DBCheckerBndS extends Bundle {
-  val limit_offset = UInt(16.W)
-  val limit_base   = UInt(32.W)
-}
-
-class DBCheckerBndL extends Bundle {
-  val limit_offset = UInt(32.W)
-  val limit_base   = UInt(16.W)
 }
 
 // ---------------------------------------------------
@@ -96,16 +87,16 @@ class DBCheckerBndL extends Bundle {
 // 0: bnd out-of-bound error
 // 1: bnd type mismatch error
 // 2: mtdt invalid error
-// 3: mtdt wrong magic_num  error
+// 4: nothing error
 
 class DBCheckerErrCnt extends Bundle {
   val cnt        = Vec(4, UInt(15.W))
   val err_latest = UInt(4.W)
 }
 class DBCheckerErrReq extends Bundle {
-  val typ  = UInt(2.W) // 0: bnd, 1: mtdt
+  val typ  = UInt(2.W) // 01: bnd, 10: mtdt
   val info = UInt(64.W)
-  val mtdt = UInt(64.W)
+  val mtdt = UInt(128.W)
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -120,14 +111,14 @@ class DBCheckerCommand extends Bundle {
 }
 
 // ------------------------------------
-// |E(metadata)[63:32]|access_addr(32)|
+// |E(metadata)[63:48]|access_addr(48)|
 // ------------------------------------
 
 class DBCheckerPtr extends Bundle with DBCheckerConst {
-  val e_mtdt_hi   = UInt(32.W)
-  val access_addr = UInt(32.W)
+  val e_mtdt_hi   = UInt(16.W)
+  val access_addr = UInt(48.W)
   def get_index: UInt = {
-    this.asUInt(63, 64 - log2Up(dbte_num))
+    this.e_mtdt_hi(15, 16 - log2Up(dbte_num))
   }
 }
 
@@ -152,7 +143,7 @@ class DBCheckerPipeIn     extends Bundle with DBCheckerConst {
 class DBCheckerPipeMedium extends Bundle with DBCheckerConst {
   val axi_a      = new AxiAddr(64)
   val axi_a_type = Bool()
-  val dbte_lo    = UInt(32.W)
+  val dbte       = UInt(128.W)
   val bypass     = Bool() // bypass checker
   val err_v      = Bool()
   val err_req    = new DBCheckerErrReq

@@ -11,8 +11,8 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   val encrypt_req  = IO(Decoupled(new QarmaInputBundle))
   val encrypt_resp = IO(Flipped(Decoupled(new QarmaOutputBundle)))
   val dbte_v_bm    = IO(Output(UInt(dbte_num.W)))
-  val dbte_sram_w  = IO(Flipped(new MemoryWritePort(UInt(32.W), log2Up(dbte_num), false)))
-  val dbte_sram_r  = IO(Flipped(new MemoryReadPort(UInt(32.W), log2Up(dbte_num))))
+  val dbte_sram_w  = IO(Flipped(new MemoryWritePort(UInt(128.W), log2Up(dbte_num), false)))
+  val dbte_sram_r  = IO(Flipped(new MemoryReadPort(UInt(128.W), log2Up(dbte_num))))
   val err_req_r    = IO(Flipped(Decoupled(new DBCheckerErrReq)))
   val err_req_w    = IO(Flipped(Decoupled(new DBCheckerErrReq)))
 
@@ -95,7 +95,8 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
             (index === chk_en.U && !regFile(index).asTypeOf(new DBCheckerEnCtl).err_byp && 
                                    !regFile(index).asTypeOf(new DBCheckerEnCtl).err_rpt && 
                                    !regFile(index).asTypeOf(new DBCheckerEnCtl).intr_clr) ||
-            index === chk_keyl.U || index === chk_keyh.U
+            index === chk_keyl.U || index === chk_keyh.U ||
+            index === mtdt_lo.U || index === mtdt_hi.U
         ) {
           regFile(index) := Mux(
             writeAddrReg(2),
@@ -148,6 +149,8 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
 
   val cmd_reg            = regFile(chk_cmd)
   val cmd_reg_struct     = cmd_reg.asTypeOf(new DBCheckerCommand)
+  val mtdt_reg           = Cat(regFile(mtdt_hi), regFile(mtdt_lo))
+  val mtdt_modifier      = mtdt_reg.asTypeOf(new DBCheckerMtdt).get_modifier
   val res_reg            = regFile(chk_res)
   val err_cnt_reg        = regFile(chk_err_cnt)
   val err_cnt_reg_struct = err_cnt_reg.asTypeOf(new DBCheckerErrCnt)
@@ -161,11 +164,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   encrypt_req.bits.tweak        := "hDEADBEEFDEADBEEF".U
   encrypt_req.bits.actual_round := 3.U
 
-  encrypt_req.bits.text := Cat(
-    magic_num.U((new DBCheckerMtdt).mn.getWidth.W),
-    dbte_alloc_id,
-    cmd_reg_struct.imm
-  ) // Build a new DBTE entry
+  encrypt_req.bits.text := mtdt_modifier // Build a new DBTE entry
   encrypt_req.bits.keyh := regFile(chk_keyh)
   encrypt_req.bits.keyl := regFile(chk_keyl)
 
@@ -187,7 +186,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
             free_sram_wait      := true.B
           }.otherwise {
             free_sram_wait := false.B
-            when(dbte_sram_r.data =/= dbte_content) {
+            when(dbte_sram_r.data(31,0) =/= dbte_content) {
               // the mentioned DBTE entry has been switched out
               cmd_reg := Cat(cmd_status_error, cmd_reg(63 - cmd_status_error.getWidth, 0)) // clear v
               res_reg := dbte_sram_r.data
@@ -212,16 +211,15 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
             // Wait for the encryption to complete
             encrypt_resp.ready := true.B
             when(encrypt_resp.valid) {
-              val e_mtdt = encrypt_resp.bits.result.asTypeOf(new DBCheckerMtdt)
-              when(!dbte_v_bitmap(e_mtdt.get_index)) { // alloc success
+              val e_mtdt = encrypt_resp.bits.result.asTypeOf(UInt(64.W))
+              when(!dbte_v_bitmap(e_mtdt(63, 64 - log2Up(dbte_num)))) { // alloc success
                 dbte_alloc_id := 0.U
                 cmd_reg       := Cat(cmd_status_ok, cmd_reg(63 - cmd_status_ok.getWidth, 0)) // clear v
-                val fake_mtdt = cmd_reg_struct.imm.asTypeOf(UInt(64.W)).asTypeOf(new DBCheckerMtdt)
                 res_reg             := encrypt_resp.bits.result // return encrypted metadata
-                dbte_v_bitmap       := dbte_v_bitmap.bitSet(e_mtdt.get_index, true.B)
-                dbte_sram_w.address := e_mtdt.get_index
+                dbte_v_bitmap       := dbte_v_bitmap.bitSet(e_mtdt(63, 64 - log2Up(dbte_num)), true.B)
+                dbte_sram_w.address := e_mtdt(63, 64 - log2Up(dbte_num))
                 dbte_sram_w.enable  := true.B
-                dbte_sram_w.data    := e_mtdt.get_dbte
+                dbte_sram_w.data    := mtdt_reg
               }.otherwise {
                 when(dbte_alloc_id === (1.U << dbte_alloc_id.getWidth) - 1.U) { // alloc fail, corresponding dbtes are all full
                   dbte_alloc_id := 0.U

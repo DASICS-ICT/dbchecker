@@ -6,6 +6,18 @@ import test_design_axi_vip_output_0_pkg::*;
 import test_design_axi_vip_ctrl_0_pkg::*;
 
 module dbchecker_sim_tb();
+    // DBChecker寄存器地址
+    localparam reg_base = 32'h4000_0000;
+    localparam reg_chk_en = 32'h00000000;        // reg 0
+    localparam reg_chk_cmd = 32'h00000008;       // reg 1
+    localparam reg_mtdt_lo = 32'h00000010;       // reg 2
+    localparam reg_mtdt_hi = 32'h00000018;       // reg 3
+    localparam reg_chk_res = 32'h00000020;       // reg 4
+    localparam reg_chk_keyl = 32'h00000028;      // reg 5
+    localparam reg_chk_keyh = 32'h00000030;      // reg 6
+    localparam reg_chk_err_cnt = 32'h00000038;   // reg 7
+    localparam reg_chk_err_info = 32'h00000040;  // reg 8
+    localparam reg_chk_err_mtdt = 32'h00000048;  // reg 9
     // 现有声明保持不变
     reg aclk;
     reg aresetn;
@@ -25,15 +37,16 @@ module dbchecker_sim_tb();
     test_design_axi_vip_output_0_slv_mem_t slave_agent;
     
     // 添加测试变量
-    bit [31:0] encrypted_metadata_lo;
-    bit [31:0] encrypted_metadata_hi;
+    bit [63:0] encrypted_metadata;
     bit [63:0] physical_pointer;
-    bit [63:0] test_metadata;
+    bit [127:0] test_metadata;
+    bit [64:0] test_cmd;
     bit [127:0] test_key = 128'h0123456789ABCDEFFEDCBA9876543210;
     bit [31:0] err_cnt_lo;
     bit [31:0] err_cnt_hi;
 
-    bit [31:0] physical_ptr_array [7:0];
+    bit [31:0] physical_ptr_array [31:0];
+    bit [31:0] test_metadata_lo_arrary [31:0];
 
     // 添加AXI传输相关变量
     xil_axi_uint                id = 0;
@@ -84,37 +97,31 @@ module dbchecker_sim_tb();
         // 测试用例1: 配置DBChecker
         test_configure_checker();
         
-        // 测试用例2: 分配Small Buffer并测试有效访问
-        test_small_buffer_valid_access();
+        // 测试用例2: 分配buffer并测试有效访问
+        test_buffer_valid_access();
         
-        // 测试用例3: 测试Small Buffer越界访问
-        test_small_buffer_out_of_bounds();
+        // 测试用例3: 测试buffer越界访问
+        test_buffer_out_of_bounds();
         
-        // 测试用例4: 分配Large Buffer并测试有效访问
-        test_large_buffer_valid_access();
-        
-        // 测试用例5: 测试Large Buffer越界访问
-        test_large_buffer_out_of_bounds();
-        
-        // 测试用例6: 测试权限检查
+        // 测试用例4: 测试权限检查
         test_permission_check();
         
-        // 测试用例7: 测试Free操作
+        // 测试用例5: 测试Free操作
         test_free_operation();
         
-        // 测试用例8: 测试Read操作
+        // 测试用例6: 测试Read操作
         test_read_operation();
         
-        // 测试用例9: 测试元数据篡改
+        // 测试用例7: 测试元数据篡改
         test_metadata_tampering();
         
-        // 测试用例10: 测试多次分配和释放
+        // 测试用例8: 测试多次分配和释放
         test_multiple_alloc_free();
         
-        // 测试用例11: 测试错误计数器
+        // 测试用例9: 测试错误计数器
         test_error_counters();
         
-        // 测试用例12: 测试禁用DBChecker
+        // 测试用例10: 测试禁用DBChecker
         test_disable_checker();
         
         // 完成测试
@@ -136,28 +143,28 @@ module dbchecker_sim_tb();
             
             // 设置密钥
             ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_0018, // chk_keyl_lo
+                reg_base + reg_chk_keyl, // chk_keyl_lo
                 0, // prot
                 test_key[31:0], // 密钥低位
                 resp
             );
 
             ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_001c, // chk_keyl_hi
+                reg_base + reg_chk_keyl + 32'h00000004, // chk_keyl_hi
                 0, // prot
                 test_key[63:32], // 密钥低位
                 resp
             );
             
             ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_0020, // chk_keyh地址
+                reg_base + reg_chk_keyh, // chk_keyh地址
                 0, // prot
                 test_key[95:64], // 密钥高位
                 resp
             );
 
             ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_0024, // chk_keyh地址
+                reg_base + reg_chk_keyh + 32'h00000004, // chk_keyh地址
                 0, // prot
                 test_key[127:96], // 密钥高位
                 resp
@@ -165,7 +172,7 @@ module dbchecker_sim_tb();
 
             // 启用DBChecker
             ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_0000, // chk_en地址
+                reg_base + reg_chk_en, // chk_en地址
                 0, // prot
                 32'h0000_0001, // 启用位
                 resp
@@ -176,25 +183,45 @@ module dbchecker_sim_tb();
         end
     endtask
 
-    // 任务: 分配Small Buffer并测试有效访问
-    task test_small_buffer_valid_access();
+    // 任务: 分配buffer并测试有效访问
+    task test_buffer_valid_access();
         begin
-            $display("Test 2: Small Buffer Valid Access");
+            $display("Test 2: buffer Valid Access");
             
-            // 构造Small Buffer元数据 (type=0, R/W=1, offset=0x100, base=0x2000)
-            test_metadata = {2'b01, 2'b01, 9'b0, 1'b0, 1'b1, 1'b0, 16'h0100, 32'h2000};
+            // 构造buffer元数据 (W=1, R=0, off_len=01100, id=1010, upbnd=0x2100, lobnd=0x2000)
+            test_metadata = {2'b10, 5'b01100, 25'h1010, 48'h2100, 48'h2000};
+            test_cmd = {2'b01, 2'b01, 60'b0}; // alloc命令
             
-            // 发送alloc命令
+            // 发送mtdt
             ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_0008, // chk_cmd地址
+                reg_base + reg_mtdt_lo,
                 0, // prot
-                test_metadata[31:0], // alloc命令
+                test_metadata[31:0], // mtdt
                 resp
             );
             ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_000c, // chk_cmd地址
+                reg_base + reg_mtdt_lo + 32'h00000004,
                 0, // prot
-                test_metadata[63:32], // alloc命令
+                test_metadata[63:32], // mtdt
+                resp
+            );
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_mtdt_hi,
+                0, // prot
+                test_metadata[95:64], // mtdt
+                resp
+            );
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_mtdt_hi + 32'h00000004,
+                0, // prot
+                test_metadata[127:96], // mtdt
+                resp
+            );
+            // 发送alloc命令
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_chk_cmd + 32'h00000004, // chk_cmd地址
+                0, // prot
+                test_cmd[63:32], // alloc命令
                 resp
             );
             // 轮询直到命令完成
@@ -202,128 +229,22 @@ module dbchecker_sim_tb();
             
             // 读取返回的物理指针
             ctrl_agent.AXI4LITE_READ_BURST(
-                32'h4000_0010, // chk_res地址
+                reg_base + reg_chk_res, // chk_res地址
                 0, // prot
-                encrypted_metadata_lo, // 存储物理指针
+                encrypted_metadata[31:0], // 存储物理指针
                 resp
             );
 
             ctrl_agent.AXI4LITE_READ_BURST(
-                32'h4000_0014, // chk_res地址
+                reg_base + reg_chk_res + 32'h00000004, // chk_res地址
                 0, // prot
-                encrypted_metadata_hi, // 存储物理指针
+                encrypted_metadata[63:32], // 存储物理指针
                 resp
             );
 
-            physical_pointer = {encrypted_metadata_hi, 32'h2000};
+            physical_pointer = {encrypted_metadata[63:48], 16'h0, 32'h00002000};
 
-            $display("Allocated physical pointer: 0x%0h", physical_pointer);
-            
-            // 准备测试数据
-            write_data = 64'hA5A5A5A5A5A5A5A5;
-            
-            // 测试有效范围内的写入
-            master_agent.AXI4_WRITE_BURST(
-                id,
-                physical_pointer + 32'h50, // 基地址+偏移量(在范围内)
-                len,
-                size,
-                burst,
-                lock,
-                cache,
-                prot,
-                region,
-                qos,
-                awuser,
-                write_data,
-                write_wuser,
-                resp
-            );
-            
-            if (resp === XIL_AXI_RESP_OKAY) begin
-                $display("Small buffer valid write completed successfully");
-                test_pass_count++;
-            end else begin
-                $display("ERROR: Small buffer valid write failed with response: 0x%0h", resp);
-                test_fail_count++;
-            end
-        end
-    endtask
-
-    // 任务: 测试Small Buffer越界访问
-    task test_small_buffer_out_of_bounds();
-        begin
-            $display("Test 3: Small Buffer Out-of-Bounds Access");
-            
-            // 准备测试数据
-            write_data = 64'hB6B6B6B6B6B6B6B6;
-            
-            // 尝试越界写入 (基地址+偏移量+1，超出范围)
-            master_agent.AXI4_WRITE_BURST(
-                id,
-                physical_pointer + 32'h200, // 超出范围地址
-                len,
-                size,
-                burst,
-                lock,
-                cache,
-                prot,
-                region,
-                qos,
-                awuser,
-                write_data,
-                write_wuser,
-                resp
-            );
-            
-            // 检查错误计数器是否增加
-            #100ns;
-            check_error_counter(0, 1);
-        end
-    endtask
-
-    // 任务: 分配Large Buffer并测试有效访问
-    task test_large_buffer_valid_access();
-        begin
-            $display("Test 4: Large Buffer Valid Access");
-            
-            // 构造Large Buffer元数据 (type=1, R/W=1, offset=0x1000, base=0x100000)
-            test_metadata = {2'b01, 2'b01, 9'b0, 1'b1, 1'b1, 1'b0, 32'h00001000, 16'h1000};
-            
-            // 发送alloc命令
-            ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_0008, // chk_cmd地址
-                0, // prot
-                test_metadata[31:0], // alloc命令
-                resp
-            );
-            ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_000c, // chk_cmd地址
-                0, // prot
-                test_metadata[63:32], // alloc命令
-                resp
-            );
-            // 轮询直到命令完成
-            poll_until_command_done();
-            
-            // 读取返回的物理指针
-            ctrl_agent.AXI4LITE_READ_BURST(
-                32'h4000_0010, // chk_res地址
-                0, // prot
-                encrypted_metadata_lo, // 存储物理指针
-                resp
-            );
-
-            ctrl_agent.AXI4LITE_READ_BURST(
-                32'h4000_0014, // chk_res地址
-                0, // prot
-                encrypted_metadata_hi, // 存储物理指针
-                resp
-            );
-            
-            physical_pointer = {encrypted_metadata_hi, 32'h10000000};
-
-            $display("Allocated large buffer physical pointer: 0x%0h", physical_pointer);
+            $display("Allocated buffer physical pointer: 0x%0h", physical_pointer);
             
             // 准备测试数据
             write_data = 64'hC7C7C7C7C7C7C7C7;
@@ -331,7 +252,7 @@ module dbchecker_sim_tb();
             // 测试有效范围内的写入
             master_agent.AXI4_WRITE_BURST(
                 id,
-                physical_pointer + 32'h500, // 基地址+偏移量(在范围内)
+                physical_pointer + 32'h40, // 基地址+偏移量(在范围内)
                 len,
                 size,
                 burst,
@@ -347,19 +268,19 @@ module dbchecker_sim_tb();
             );
             
             if (resp === XIL_AXI_RESP_OKAY) begin
-                $display("Large buffer valid write completed successfully");
+                $display("buffer valid write completed successfully");
                 test_pass_count++;
             end else begin
-                $display("ERROR: Large buffer valid write failed with response: 0x%0h", resp);
+                $display("ERROR: buffer valid write failed with response: 0x%0h", resp);
                 test_fail_count++;
             end
         end
     endtask
 
-    // 任务: 测试Large Buffer越界访问
-    task test_large_buffer_out_of_bounds();
+    // 任务: 测试buffer越界访问
+    task test_buffer_out_of_bounds();
         begin
-            $display("Test 5: Large Buffer Out-of-Bounds Access");
+            $display("Test 3: buffer Out-of-Bounds Access");
             
             // 准备测试数据
             write_data = 64'hD8D8D8D8D8D8D8D8;
@@ -384,29 +305,49 @@ module dbchecker_sim_tb();
             
             // 检查错误计数器是否增加
             #100ns;
-            check_error_counter(0, 2);
+            check_error_counter(0, 1);
         end
     endtask
 
     // 任务: 测试权限检查
     task test_permission_check();
         begin
-            $display("Test 6: Permission Check");
+            $display("Test 4: Permission Check");
             
-            // 构造只读Buffer元数据 (type=0, R/W=0, offset=0x100, base=0x3000)
-            test_metadata = {2'b01, 2'b01, 9'b0, 1'b0, 1'b0, 1'b1, 16'h0100, 32'h3000};
-
-            // 发送alloc命令
+            // 构造buffer元数据 (W=0, R=1, off_len=01100, id=1010, upbnd=0x4100, lobnd=0x4000)
+            test_metadata = {2'b01, 5'b01100, 25'h2025, 48'h4100, 48'h4000};
+            test_cmd = {2'b01, 2'b01, 60'b0}; // alloc命令
+            
+            // 发送mtdt
             ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_0008, // chk_cmd地址
+                reg_base + reg_mtdt_lo,
                 0, // prot
-                test_metadata[31:0], // alloc命令
+                test_metadata[31:0], // mtdt
                 resp
             );
             ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_000c, // chk_cmd地址
+                reg_base + reg_mtdt_lo + 32'h00000004,
                 0, // prot
-                test_metadata[63:32], // alloc命令
+                test_metadata[63:32], // mtdt
+                resp
+            );
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_mtdt_hi,
+                0, // prot
+                test_metadata[95:64], // mtdt
+                resp
+            );
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_mtdt_hi + 32'h00000004,
+                0, // prot
+                test_metadata[127:96], // mtdt
+                resp
+            );
+            // 发送alloc命令
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_chk_cmd + 32'h00000004, // chk_cmd地址
+                0, // prot
+                test_cmd[63:32], // alloc命令
                 resp
             );
             // 轮询直到命令完成
@@ -414,20 +355,22 @@ module dbchecker_sim_tb();
             
             // 读取返回的物理指针
             ctrl_agent.AXI4LITE_READ_BURST(
-                32'h4000_0010, // chk_res地址
+                reg_base + reg_chk_res, // chk_res地址
                 0, // prot
-                encrypted_metadata_lo, // 存储物理指针
+                encrypted_metadata[31:0], // 存储物理指针
                 resp
             );
 
             ctrl_agent.AXI4LITE_READ_BURST(
-                32'h4000_0014, // chk_res地址
+                reg_base + reg_chk_res + 32'h00000004, // chk_res地址
                 0, // prot
-                encrypted_metadata_hi, // 存储物理指针
+                encrypted_metadata[63:32], // 存储物理指针
                 resp
             );
-            physical_pointer = {encrypted_metadata_hi, 32'h3000};
-            $display("Allocated read-only physical pointer: 0x%0h", physical_pointer);
+
+            physical_pointer = {encrypted_metadata[63:48], 16'h0, 32'h00004000};
+
+            $display("Allocated buffer physical pointer: 0x%0h", physical_pointer);
             
             // 准备测试数据
             write_data = 64'hE9E9E9E9E9E9E9E9;
@@ -459,21 +402,21 @@ module dbchecker_sim_tb();
     // 任务: 测试Free操作
     task test_free_operation();
         begin
-            $display("Test 7: Free Operation");
+            $display("Test 5: Free Operation");
             
             // 释放之前分配的缓冲区(使用最后一个物理指针的高32位作为index)
-            test_metadata = {2'b01, 2'b00, 8'b0, encrypted_metadata_hi[31:12], encrypted_metadata_lo};
+            test_cmd = {2'b01, 2'b00, 8'h0, encrypted_metadata[63:44], test_metadata[31:0]}; // alloc命令
 
             ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_0008, // chk_cmd地址
+                reg_base + reg_chk_cmd, // chk_cmd地址
                 0, // prot
-                test_metadata[31:0], // alloc命令
+                test_cmd[31:0], // alloc命令
                 resp
             );
             ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_000c, // chk_cmd地址
+                reg_base + reg_chk_cmd + 32'h00000004, // chk_cmd地址
                 0, // prot
-                test_metadata[63:32], // alloc命令
+                test_cmd[63:32], // alloc命令
                 resp
             );
             
@@ -512,21 +455,43 @@ module dbchecker_sim_tb();
     // 任务: 测试Read操作
     task test_read_operation();
         begin
-            $display("Test 8: Read Operation");
+            $display("Test 6: Write-Read Operation");
             
             // 分配一个新的缓冲区
-            test_metadata = {2'b01, 2'b01, 9'b0, 1'b0, 1'b1, 1'b1, 16'h0100, 32'h4000};
+            // 构造buffer元数据 (W=1, R=1, off_len=01100, id=2030, upbnd=0x6100, lobnd=0x6000)
+            test_metadata = {2'b11, 5'b01100, 25'h2030, 48'h6100, 48'h6000};
+            test_cmd = {2'b01, 2'b01, 60'b0}; // alloc命令
 
+            // 发送mtdt
             ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_0008, // chk_cmd地址
+                reg_base + reg_mtdt_lo,
                 0, // prot
-                test_metadata[31:0], // alloc命令
+                test_metadata[31:0], // mtdt
                 resp
             );
             ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_000c, // chk_cmd地址
+                reg_base + reg_mtdt_lo + 32'h00000004,
                 0, // prot
-                test_metadata[63:32], // alloc命令
+                test_metadata[63:32], // mtdt
+                resp
+            );
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_mtdt_hi,
+                0, // prot
+                test_metadata[95:64], // mtdt
+                resp
+            );
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_mtdt_hi + 32'h00000004,
+                0, // prot
+                test_metadata[127:96], // mtdt
+                resp
+            );
+            // 发送alloc命令
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_chk_cmd + 32'h00000004, // chk_cmd地址
+                0, // prot
+                test_cmd[63:32], // alloc命令
                 resp
             );
             // 轮询直到命令完成
@@ -534,19 +499,19 @@ module dbchecker_sim_tb();
             
             // 读取返回的物理指针
             ctrl_agent.AXI4LITE_READ_BURST(
-                32'h4000_0010, // chk_res地址
+                reg_base + reg_chk_res, // chk_res地址
                 0, // prot
-                encrypted_metadata_lo, // 存储物理指针
+                encrypted_metadata[31:0], // 存储物理指针
                 resp
             );
 
             ctrl_agent.AXI4LITE_READ_BURST(
-                32'h4000_0014, // chk_res地址
+                reg_base + reg_chk_res + 32'h00000004, // chk_res地址
                 0, // prot
-                encrypted_metadata_hi, // 存储物理指针
+                encrypted_metadata[63:32], // 存储物理指针
                 resp
             );
-            physical_pointer = {encrypted_metadata_hi, 32'h4000};
+            physical_pointer = {encrypted_metadata[63:48], 16'h0, 32'h6000};
             $display("Allocated buffer for write - read test: 0x%0h", physical_pointer);
             
             // 首先写入一些数据
@@ -621,48 +586,18 @@ module dbchecker_sim_tb();
             
             // 检查错误计数器是否增加
             #100ns;
-            check_error_counter(0, 3);
+            check_error_counter(0, 2);
         end
     endtask
 
     // 任务: 测试元数据篡改
     task test_metadata_tampering();
         begin
-            $display("Test 9: Metadata Tampering");
+            $display("Test 7: Metadata Tampering");
             
-            // 分配一个新的缓冲区
-            test_metadata = {2'b01, 2'b01, 9'b0, 1'b0, 1'b1, 1'b0, 16'h0100, 32'h5000};
-
-            ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_0008, // chk_cmd地址
-                0, // prot
-                test_metadata[31:0], // alloc命令
-                resp
-            );
-            ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_000c, // chk_cmd地址
-                0, // prot
-                test_metadata[63:32], // alloc命令
-                resp
-            );
-            // 轮询直到命令完成
-            poll_until_command_done();
-            
-            // 读取返回的物理指针
-            ctrl_agent.AXI4LITE_READ_BURST(
-                32'h4000_0010, // chk_res地址
-                0, // prot
-                encrypted_metadata_lo, // 存储物理指针
-                resp
-            );
-
-            ctrl_agent.AXI4LITE_READ_BURST(
-                32'h4000_0014, // chk_res地址
-                0, // prot
-                encrypted_metadata_hi, // 存储物理指针
-                resp
-            );
-            physical_pointer = {encrypted_metadata_hi, 32'h4000};
+            // 构造buffer元数据 (W=0, R=1, off_len=01100, id=2040, upbnd=8100, lobnd=0x8000)
+            alloc_metadata(2'b01, 5'b01100, 25'h2040, 48'h8100, 48'h8000);
+            physical_pointer = {encrypted_metadata[63:48], 32'h4000};
             $display("Allocated buffer for tampering test: 0x%0h", physical_pointer);
             
             
@@ -670,7 +605,7 @@ module dbchecker_sim_tb();
             write_data = 64'hFEDCBA9876543210;
             master_agent.AXI4_WRITE_BURST(
                 id,
-                physical_pointer + 40'h1000000000 + 32'h50, // 在范围内的地址
+                physical_pointer + 32'h50, // 在范围内的地址
                 len,
                 size,
                 burst,
@@ -687,53 +622,24 @@ module dbchecker_sim_tb();
             
             // 检查错误计数器是否增加（应该触发magic number错误）
             #100ns;
-            check_error_counter(3, 1);
+            check_error_counter(2, 2);
         end
     endtask
 
     // 任务: 测试多次分配和释放
     task test_multiple_alloc_free();
         begin
-            $display("Test 10: Multiple Allocation and Free");
+            $display("Test 8: Multiple Allocation and Free");
             // 分配多个缓冲区
             for (int i = 0; i < 4; i++) begin
-                test_metadata = {2'b01, 2'b01, 9'b0, 1'b0, 1'b1, 1'b0, 16'h0100, 32'h6000 + i*32'h100};
-                
-            ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_0008, // chk_cmd地址
-                0, // prot
-                test_metadata[31:0], // alloc命令
-                resp
-            );
-            ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_000c, // chk_cmd地址
-                0, // prot
-                test_metadata[63:32], // alloc命令
-                resp
-            );
-            // 轮询直到命令完成
-            poll_until_command_done();
-            
-            // 读取返回的物理指针
-            ctrl_agent.AXI4LITE_READ_BURST(
-                32'h4000_0010, // chk_res地址
-                0, // prot
-                physical_ptr_array[2*i], // 存储物理指针
-                resp
-            );
-
-            ctrl_agent.AXI4LITE_READ_BURST(
-                32'h4000_0014, // chk_res地址
-                0, // prot
-                physical_ptr_array[2*i + 1], // 存储物理指针
-                resp
-            );
-
-                physical_pointer = {physical_ptr_array[2*i + 1], 32'h6000 + i*32'h100};
+                alloc_metadata(2'b11, 5'b01100, 25'h4000 + i, 48'ha000 + (i + 1 )* 32'h100, 48'ha000 + i * 32'h100);
+                physical_pointer = {encrypted_metadata[63:48], 16'h0, 32'ha000 + i * 32'h100};
+                physical_ptr_array[i] = encrypted_metadata[63:32];
+                test_metadata_lo_arrary[i] = test_metadata[31:0];
                 $display("Allocated buffer %0d: 0x%0h", i, physical_pointer);
 
                 // 测试写入
-                write_data = 64'hA0A0A0A0A0A0A0A0 + i;
+                write_data = {8{8'hA0 + i}};
                 master_agent.AXI4_WRITE_BURST(
                     id,
                     physical_pointer + 32'h50, // 在范围内的地址
@@ -762,17 +668,17 @@ module dbchecker_sim_tb();
             
             // 释放所有缓冲区
             for (int i = 0; i < 4; i++) begin
-            test_metadata = {2'b01, 2'b00, 6'b0, {physical_ptr_array[2 * i + 1][31:12], physical_ptr_array[2 * i]}};
+            test_cmd = {2'b01, 2'b00, 8'h0, physical_ptr_array[i][31:12], test_metadata_lo_arrary[i][31:0]}; // free命令
             ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_0008, // chk_cmd地址
+                reg_base + reg_chk_cmd, // chk_cmd地址
                 0, // prot
-                test_metadata[31:0],
+                test_cmd[31:0],
                 resp
             );
             ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_000c, // chk_cmd地址
+                reg_base + reg_chk_cmd + 32'h00000004, // chk_cmd地址
                 0, // prot
-                test_metadata[63:32],
+                test_cmd[63:32],
                 resp
             );
             poll_until_command_done();
@@ -789,17 +695,17 @@ module dbchecker_sim_tb();
     task test_error_counters();
 
         begin
-            $display("Test 11: Error Counters");
+            $display("Test 9: Error Counters");
             
             // 读取错误计数器
             ctrl_agent.AXI4LITE_READ_BURST(
-                32'h4000_0028, // chk_err_cnt地址
+                reg_base + reg_chk_err_cnt,// chk_err_cnt地址
                 0, // prot
                 err_cnt_lo, // 错误计数器值
                 resp
             );
             ctrl_agent.AXI4LITE_READ_BURST(
-                32'h4000_002c, // chk_err_cnt地址
+                reg_base + reg_chk_err_cnt + 32'h00000004, // chk_err_cnt地址
                 0, // prot
                 err_cnt_hi, // 错误计数器值
                 resp
@@ -813,7 +719,7 @@ module dbchecker_sim_tb();
             
             // 清除错误计数器
             ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_000c, // chk_cmd_hi
+                reg_base + reg_chk_cmd + 32'h00000004, // chk_cmd_hi
                 0, // prot
                 {2'b01, 2'b10, 28'b0}, // clr_err命令
                 resp
@@ -824,13 +730,13 @@ module dbchecker_sim_tb();
             
             // 验证错误计数器已清除
             ctrl_agent.AXI4LITE_READ_BURST(
-                32'h4000_0028, // chk_err_cnt地址
+                reg_base + reg_chk_err_cnt, // chk_err_cnt地址
                 0, // prot
                 err_cnt_lo, // 错误计数器值
                 resp
             );
             ctrl_agent.AXI4LITE_READ_BURST(
-                32'h4000_002c, // chk_err_cnt地址
+                reg_base + reg_chk_err_cnt + 32'h00000004, // chk_err_cnt地址
                 0, // prot
                 err_cnt_hi, // 错误计数器值
                 resp
@@ -849,11 +755,11 @@ module dbchecker_sim_tb();
     // 任务: 测试禁用DBChecker
     task test_disable_checker();
         begin
-            $display("Test 12: Disable DBChecker");
+            $display("Test 10: Disable DBChecker");
             
             // 禁用DBChecker
             ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_0000, // chk_en地址
+                reg_base + reg_chk_en, // chk_en地址
                 0, // prot
                 32'h0000_0000, // 禁用位
                 resp
@@ -888,7 +794,7 @@ module dbchecker_sim_tb();
             
             // 重新启用DBChecker
             ctrl_agent.AXI4LITE_WRITE_BURST(
-                32'h4000_0000, // chk_en地址
+                reg_base + reg_chk_en, // chk_en地址
                 0, // prot
                 32'h0000_0001, // 启用位
                 resp
@@ -904,7 +810,7 @@ module dbchecker_sim_tb();
             do begin
                 #10ns;
                 ctrl_agent.AXI4LITE_READ_BURST(
-                    32'h4000_000c, // chk_cmd地址
+                    reg_base + reg_chk_cmd + 32'h00000004, // chk_cmd地址
                     0, // prot
                     cmd_status, // 命令状态
                     resp
@@ -930,13 +836,13 @@ module dbchecker_sim_tb();
         int actual_value;
         begin
             ctrl_agent.AXI4LITE_READ_BURST(
-                32'h4000_0028, // chk_err_cnt地址
+                reg_base + reg_chk_err_cnt, // chk_err_cnt地址
                 0, // prot
                 err_cnt_lo, // 错误计数器值
                 resp
             );
             ctrl_agent.AXI4LITE_READ_BURST(
-                32'h4000_002c, // chk_err_cnt地址
+                reg_base + reg_chk_err_cnt + 32'h00000004, // chk_err_cnt地址
                 0, // prot
                 err_cnt_hi, // 错误计数器值
                 resp
@@ -957,6 +863,62 @@ module dbchecker_sim_tb();
                          counter_index, actual_value, expected_value);
                 test_fail_count++;
             end
+        end
+    endtask
+
+    task alloc_metadata(bit [1:0] rw, bit [4:0] off_len, bit [24:0] id, bit [47:0] upbnd, bit [47:0] lobnd);
+        test_metadata = {rw, off_len, id, upbnd, lobnd};
+        test_cmd = {2'b01, 2'b01, 60'b0}; // alloc命令
+        begin
+            // 发送mtdt
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_mtdt_lo,
+                0, // prot
+                test_metadata[31:0], // mtdt
+                resp
+            );
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_mtdt_lo + 32'h00000004,
+                0, // prot
+                test_metadata[63:32], // mtdt
+                resp
+            );
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_mtdt_hi,
+                0, // prot
+                test_metadata[95:64], // mtdt
+                resp
+            );
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_mtdt_hi + 32'h00000004,
+                0, // prot
+                test_metadata[127:96], // mtdt
+                resp
+            );
+            // 发送alloc命令
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_chk_cmd + 32'h00000004, // chk_cmd地址
+                0, // prot
+                test_cmd[63:32], // alloc命令
+                resp
+            );
+            // 轮询直到命令完成
+            poll_until_command_done();
+            
+            // 读取返回的物理指针
+            ctrl_agent.AXI4LITE_READ_BURST(
+                reg_base + reg_chk_res, // chk_res地址
+                0, // prot
+                encrypted_metadata[31:0], // 存储物理指针
+                resp
+            );
+
+            ctrl_agent.AXI4LITE_READ_BURST(
+                reg_base + reg_chk_res + 32'h00000004, // chk_res地址
+                0, // prot
+                encrypted_metadata[63:32], // 存储物理指针
+                resp
+            );
         end
     endtask
 

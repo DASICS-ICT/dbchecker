@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.util._
 import axi._
 
-// stage0-2: frontend
+// stage0-1: frontend
 class DBCheckerPipeStage0 extends Module with DBCheckerConst { // receive AXI request
   val in_ar       = IO(Flipped(Decoupled(new AxiAddr(64))))
   val in_aw       = IO(Flipped(Decoupled(new AxiAddr(64))))
@@ -36,17 +36,18 @@ class DBCheckerPipeStage0 extends Module with DBCheckerConst { // receive AXI re
   out_pipe.valid           := pipe_v_reg
   out_pipe.bits.axi_a      := pipe_addr_reg
   out_pipe.bits.axi_a_type := rw_reg
-  out_pipe.bits.dbte_lo    := 0.U.asTypeOf(UInt(32.W))
+  out_pipe.bits.dbte    := 0.U.asTypeOf(UInt(128.W))
   out_pipe.bits.bypass     := !ctrl_en.func_en
   out_pipe.bits.err_v      := false.B
   out_pipe.bits.err_req    := 0.U.asTypeOf(new DBCheckerErrReq)
 }
+
 class DBCheckerPipeStage1 extends Module with DBCheckerConst { // readDBTE
 
   val in_pipe     = IO(Flipped(Decoupled(new DBCheckerPipeMedium)))
   val out_pipe    = IO(Decoupled(new DBCheckerPipeMedium))
   val dbte_v_bm   = IO(Input(UInt(dbte_num.W)))
-  val dbte_mem_if = IO(Flipped(new MemoryReadPort(UInt(32.W), log2Up(dbte_num))))
+  val dbte_mem_if = IO(Flipped(new MemoryReadPort(UInt(128.W), log2Up(dbte_num))))
 
   val pipe_v_reg      = RegInit(false.B)
   val pipe_medium_reg = RegInit(0.U.asTypeOf(new DBCheckerPipeMedium))
@@ -69,7 +70,7 @@ class DBCheckerPipeStage1 extends Module with DBCheckerConst { // readDBTE
   in_pipe.ready         := !pipe_v_reg || out_pipe.fire
   out_pipe.valid        := pipe_v_reg
   out_pipe.bits         := pipe_medium_reg
-  out_pipe.bits.dbte_lo := dbte_mem_if.data
+  out_pipe.bits.dbte := dbte_mem_if.data
   when(!pipe_medium_reg.err_v && err_finv) {
     out_pipe.bits.err_v        := err_finv
     out_pipe.bits.err_req.typ  := err_mtdt_finv
@@ -78,59 +79,13 @@ class DBCheckerPipeStage1 extends Module with DBCheckerConst { // readDBTE
   }
 }
 
-class DBCheckerPipeStage2 extends Module with DBCheckerConst { // WaitCheckreq
-  val in_pipe     = IO(Flipped(Decoupled(new DBCheckerPipeMedium)))
-  val out_pipe    = IO(Decoupled(new DBCheckerPipeMedium))
-  val decrypt_req = IO(Decoupled(new QarmaInputBundle))
-  val decrypt_key = IO(Input(UInt(128.W)))
-
-  val pipe_medium_reg = RegInit(0.U.asTypeOf(new DBCheckerPipeMedium))
-  val pipe_v_reg      = RegInit(false.B)
-  val decrypt_sent    = RegInit(false.B)
-
-  when(in_pipe.fire) {
-    pipe_v_reg      := true.B
-    pipe_medium_reg := in_pipe.bits
-  }.elsewhen(out_pipe.fire) {
-    pipe_v_reg      := false.B
-    pipe_medium_reg := 0.U.asTypeOf(new DBCheckerPipeMedium)
-  }
-
-  when(decrypt_req.fire) {
-    decrypt_sent := true.B
-  }.elsewhen(in_pipe.fire || out_pipe.fire) {
-    decrypt_sent := false.B
-  }
-
-  decrypt_req.valid             := Mux(in_pipe.fire, !in_pipe.bits.bypass, pipe_v_reg && !decrypt_sent && !pipe_medium_reg.bypass)
-  decrypt_req.bits.text         := Mux(
-    in_pipe.fire,
-    Cat(in_pipe.bits.axi_a.addr.asTypeOf(new DBCheckerPtr).e_mtdt_hi, in_pipe.bits.dbte_lo),
-    Cat(pipe_medium_reg.axi_a.addr.asTypeOf(new DBCheckerPtr).e_mtdt_hi, pipe_medium_reg.dbte_lo)
-  )
-  decrypt_req.bits.encrypt      := 0.U
-  decrypt_req.bits.tweak        := "hDEADBEEFDEADBEEF".U
-  decrypt_req.bits.actual_round := 3.U
-  decrypt_req.bits.keyh         := decrypt_key(127, 64)
-  decrypt_req.bits.keyl         := decrypt_key(63, 0)
-
-  in_pipe.ready  := !pipe_v_reg || out_pipe.fire
-  out_pipe.valid := pipe_v_reg && (decrypt_sent || pipe_medium_reg.bypass)
-  out_pipe.bits  := pipe_medium_reg
-}
-
-// Ringbuffer
-
-// stage3-5: backend
-class DBCheckerPipeStage3 extends Module with DBCheckerConst { // WaitCheckResp
+// stage2-4: backend
+class DBCheckerPipeStage2 extends Module with DBCheckerConst { // check request bound
   val in_pipe      = IO(Flipped(Decoupled(new DBCheckerPipeMedium)))
   val out_pipe     = IO(Decoupled(new DBCheckerPipeMedium))
-  val decrypt_resp = IO(Flipped(Decoupled(new QarmaOutputBundle)))
 
   val pipe_medium_reg    = RegInit(0.U.asTypeOf(new DBCheckerPipeMedium))
-  val decrypt_medium_reg = RegInit(0.U.asTypeOf(new QarmaOutputBundle))
   val pipe_v_reg         = RegInit(false.B)
-  val decrypt_v_reg      = RegInit(false.B)
 
   val check_bypass = WireInit(false.B)
   val err_v        = WireInit(false.B)
@@ -144,49 +99,29 @@ class DBCheckerPipeStage3 extends Module with DBCheckerConst { // WaitCheckResp
     pipe_medium_reg := 0.U.asTypeOf(new DBCheckerPipeMedium)
   }
 
-  when(decrypt_resp.fire) {
-    decrypt_v_reg      := true.B
-    decrypt_medium_reg := decrypt_resp.bits
-  }.elsewhen(out_pipe.fire) {
-    decrypt_v_reg      := false.B
-    decrypt_medium_reg := 0.U.asTypeOf(new QarmaOutputBundle)
-  }
   val addr_ptr = pipe_medium_reg.axi_a.addr.asTypeOf(new DBCheckerPtr)
-
-  // receive decrypt response
-  val decrypt_result = decrypt_medium_reg.result.asTypeOf(new DBCheckerMtdt)
-  val magic_num_err  = (decrypt_result.mn =/= magic_num.U)
-  val bnd_base       = Mux(
-    decrypt_result.typ.asBool,
-    Cat(
-      decrypt_result.bnd.asTypeOf(new DBCheckerBndL).limit_base,
-      0.U((32 - (new DBCheckerBndL).limit_base.getWidth).W)
-    ),
-    decrypt_result.bnd.asTypeOf(new DBCheckerBndS).limit_base
-  )
-  val bnd_offset     = Mux(
-    decrypt_result.typ.asBool,
-    decrypt_result.bnd.asTypeOf(new DBCheckerBndL).limit_offset,
-    decrypt_result.bnd.asTypeOf(new DBCheckerBndS).limit_offset
-  )
-  val bnd_limit_err  =
-    (addr_ptr.access_addr < bnd_base) || ((addr_ptr.access_addr + pipe_medium_reg.axi_a.len) > (bnd_base + bnd_offset))
-  val bnd_mismatch   = Mux(pipe_medium_reg.axi_a_type, !decrypt_result.w.asBool, !decrypt_result.r.asBool)
-  val bnd_err        = (magic_num_err || bnd_limit_err || bnd_mismatch) && !pipe_medium_reg.bypass
+  val lo_bnd   = pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt).lo_bnd
+  val up_bnd   = pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt).up_bnd
+  val r        = pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt).r.asBool
+  val w        = pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt).w.asBool
+  
+  val bnd_err  = (addr_ptr.access_addr < lo_bnd) || 
+                 ((addr_ptr.access_addr + pipe_medium_reg.axi_a.len) > up_bnd)
+  val type_mismatch  = Mux(pipe_medium_reg.axi_a_type, !w, !r)
+  val access_err     = (bnd_err || type_mismatch) && !pipe_medium_reg.bypass
 
   in_pipe.ready      := !pipe_v_reg || out_pipe.fire
-  decrypt_resp.ready := !decrypt_v_reg || out_pipe.fire
-  out_pipe.valid     := pipe_v_reg && (decrypt_v_reg || pipe_medium_reg.bypass)
+  out_pipe.valid     := pipe_v_reg
   out_pipe.bits      := pipe_medium_reg
-  when(!pipe_medium_reg.err_v && bnd_err) {
-    out_pipe.bits.err_v        := bnd_err
-    out_pipe.bits.err_req.typ  := Mux(magic_num_err, err_mtdt_fmn, Mux(bnd_limit_err, err_bnd_farea, err_bnd_ftype))
+  when(!pipe_medium_reg.err_v && access_err) {
+    out_pipe.bits.err_v        := access_err
+    out_pipe.bits.err_req.typ  := Mux(bnd_err, err_bnd_farea, err_bnd_ftype)
     out_pipe.bits.err_req.info := in_pipe.bits.axi_a.addr
-    out_pipe.bits.err_req.mtdt := decrypt_medium_reg.result
+    out_pipe.bits.err_req.mtdt := pipe_medium_reg.dbte
   }
 }
 
-class DBCheckerPipeStage4 extends Module with DBCheckerConst { // divide pipe to handle R/W seperately, report error
+class DBCheckerPipeStage3 extends Module with DBCheckerConst { // divide pipe to handle R/W seperately, report error
   val in_pipe    = IO(Flipped(Decoupled(new DBCheckerPipeMedium)))
   val out_pipe_r = IO(Decoupled(new DBCheckerPipeMedium))
   val out_pipe_w = IO(Decoupled(new DBCheckerPipeMedium))
@@ -194,6 +129,8 @@ class DBCheckerPipeStage4 extends Module with DBCheckerConst { // divide pipe to
   val err_req_if = IO(Decoupled(new DBCheckerErrReq))
   val ctrl_en = IO(Input(new DBCheckerEnCtl))
   val intr_out = IO(Output(Bool()))
+
+  val debug_dbte = IO(Output(new DBCheckerMtdt))
 
   val pipe_medium_reg = RegInit(0.U.asTypeOf(new DBCheckerPipeMedium))
   val pipe_v_reg      = RegInit(false.B)
@@ -206,6 +143,8 @@ class DBCheckerPipeStage4 extends Module with DBCheckerConst { // divide pipe to
     pipe_v_reg      := false.B
     pipe_medium_reg := 0.U.asTypeOf(new DBCheckerPipeMedium)
   }
+
+  debug_dbte := pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt)
 
   err_req_if.valid := Mux(in_pipe.fire, in_pipe.bits.err_v, pipe_v_reg && pipe_medium_reg.err_v && !err_sent) // when bypass, it must be false
   err_req_if.bits  := Mux(in_pipe.fire, in_pipe.bits.err_req, pipe_medium_reg.err_req)
@@ -253,7 +192,7 @@ class DBCheckerPipeStage4 extends Module with DBCheckerConst { // divide pipe to
   }
 }
 
-class DBCheckerPipeStage5R extends Module with DBCheckerConst { // Return_R
+class DBCheckerPipeStage4R extends Module with DBCheckerConst { // Return_R
   val in_pipe = IO(Flipped(Decoupled(new DBCheckerPipeMedium)))
 
   val s_r_chan  = IO(Decoupled(new AxiReadData(128)))
@@ -305,7 +244,7 @@ class DBCheckerPipeStage5R extends Module with DBCheckerConst { // Return_R
   in_pipe.ready := !pipe_v_reg || transfer_done
 }
 
-class DBCheckerPipeStage5W extends Module with DBCheckerConst { // Return_W
+class DBCheckerPipeStage4W extends Module with DBCheckerConst { // Return_W
   val in_pipe = IO(Flipped(Decoupled(new DBCheckerPipeMedium)))
 
   val s_w_chan  = IO(Flipped(Decoupled(new AxiWriteData(128))))
@@ -376,11 +315,9 @@ class DBCheckerPipeline extends Module with DBCheckerConst {
   val s_axi_io_rx  = IO(new AxiSlave(64, 128))
   val ctrl_reg     = IO(Input(Vec(RegNum, UInt(64.W))))
   val dbte_v_bm    = IO(Input(UInt(dbte_num.W)))
-  val decrypt_req  = IO(Decoupled(new QarmaInputBundle))
-  val decrypt_resp = IO(Flipped(Decoupled(new QarmaOutputBundle)))
   val err_req_r    = IO(Decoupled(new DBCheckerErrReq))
   val err_req_w    = IO(Decoupled(new DBCheckerErrReq))
-  val dbte_sram_r  = IO(Flipped(new MemoryReadPort(UInt(32.W), log2Up(dbte_num))))
+  val dbte_sram_r  = IO(Flipped(new MemoryReadPort(UInt(128.W), log2Up(dbte_num))))
   val debug_if     = IO(Output(UInt(64.W)))
   val intr_state   = IO(Output(Bool()))
 
@@ -388,14 +325,11 @@ class DBCheckerPipeline extends Module with DBCheckerConst {
 //frontend
   val stage0  = Module(new DBCheckerPipeStage0)
   val stage1  = Module(new DBCheckerPipeStage1)
-  val stage2  = Module(new DBCheckerPipeStage2)
-//ringbuffer
-  val rb      = Module(new RingBuffer(new DBCheckerPipeMedium, 4))
 //backend
+  val stage2  = Module(new DBCheckerPipeStage2)
   val stage3  = Module(new DBCheckerPipeStage3)
-  val stage4  = Module(new DBCheckerPipeStage4)
-  val stage5r = Module(new DBCheckerPipeStage5R)
-  val stage5w = Module(new DBCheckerPipeStage5W)
+  val stage4r = Module(new DBCheckerPipeStage4R)
+  val stage4w = Module(new DBCheckerPipeStage4W)
 
   stage0.in_ar <> s_axi_io_rx.ar
   stage0.in_aw <> s_axi_io_rx.aw
@@ -406,29 +340,23 @@ class DBCheckerPipeline extends Module with DBCheckerConst {
   stage1.dbte_mem_if <> dbte_sram_r
 
   stage2.in_pipe <> stage1.out_pipe
-  stage2.decrypt_key := Cat(ctrl_reg(chk_keyh), ctrl_reg(chk_keyl))
-  stage2.decrypt_req <> decrypt_req
 
-  rb.io.enq <> stage2.out_pipe
-  rb.io.deq <> stage3.in_pipe
-
-  stage3.decrypt_resp <> decrypt_resp
-  stage4.in_pipe <> stage3.out_pipe
-  stage4.err_req_if <> err_req_r
-  stage4.ctrl_en := ctrl_reg(chk_en).asTypeOf(new DBCheckerEnCtl)
-  intr_state := stage4.intr_out
+  stage3.in_pipe <> stage2.out_pipe
+  stage3.err_req_if <> err_req_r
+  stage3.ctrl_en := ctrl_reg(chk_en).asTypeOf(new DBCheckerEnCtl)
+  intr_state := stage3.intr_out
   
-  stage5r.in_pipe <> stage4.out_pipe_r
-  stage5r.s_r_chan <> s_axi_io_rx.r
-  stage5r.m_ar_chan <> m_axi_io_rx.ar
-  stage5r.m_r_chan <> m_axi_io_rx.r
+  stage4r.in_pipe <> stage3.out_pipe_r
+  stage4r.s_r_chan <> s_axi_io_rx.r
+  stage4r.m_ar_chan <> m_axi_io_rx.ar
+  stage4r.m_r_chan <> m_axi_io_rx.r
 
-  stage5w.in_pipe <> stage4.out_pipe_w
-  stage5w.s_w_chan <> s_axi_io_rx.w
-  stage5w.s_b_chan <> s_axi_io_rx.b
-  stage5w.m_aw_chan <> m_axi_io_rx.aw
-  stage5w.m_w_chan <> m_axi_io_rx.w
-  stage5w.m_b_chan <> m_axi_io_rx.b
+  stage4w.in_pipe <> stage3.out_pipe_w
+  stage4w.s_w_chan <> s_axi_io_rx.w
+  stage4w.s_b_chan <> s_axi_io_rx.b
+  stage4w.m_aw_chan <> m_axi_io_rx.aw
+  stage4w.m_w_chan <> m_axi_io_rx.w
+  stage4w.m_b_chan <> m_axi_io_rx.b
 
-  debug_if := rb.io.count
+  debug_if := stage3.debug_dbte.asUInt
 }
