@@ -68,16 +68,31 @@ class DBCheckerEnCtl extends Bundle with DBCheckerConst{
 class DBCheckerMtdt extends Bundle with DBCheckerConst {
   val w        = UInt(1.W)
   val r        = UInt(1.W)
-  val off_len  = UInt(5.W)
+  val dev      = UInt(5.W)
   val id       = UInt(25.W)
   val up_bnd   = UInt(48.W)
   val lo_bnd   = UInt(48.W)
 
-  def get_modifier: UInt = {
-    val totalBits = this.asUInt
-    val hi64 = totalBits(127, 64)
-    val lo64 = totalBits(63, 0)
-    hi64 ^ lo64
+  def get_hash_index: UInt = {
+    // 128bit ---toeplitz hash---> 16bit
+    val text = this.asUInt
+    val key  = "h1234_5678_90ab_cdef_fedc_ba09_8765_4321_dddd".U(143.W)
+    val xVec = VecInit(text.asBools.reverse)
+    val yVec = Wire(Vec(16, Bool()))
+    // 计算每个输出位
+    for (i <- 0 until 16) {
+      val andResults = Wire(Vec(128, Bool()))
+      
+      for (j <- 0 until 128) {
+        // 计算密钥索引：127 + i - j
+        val kIndex = 127 + i - j
+        andResults(j) := key(kIndex) && xVec(j)
+      }
+      
+      // 树形异或归约（优化延迟）
+      yVec(i) := andResults.reduceTree(_ ^ _)
+    }
+    yVec.asUInt
   }
 }
 

@@ -8,8 +8,6 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   // io
   val s_axil       = IO(new AxiLiteSlave(32, 32))
   val ctrl_reg     = IO(Output(Vec(RegNum, UInt(64.W))))
-  val encrypt_req  = IO(Decoupled(new QarmaInputBundle))
-  val encrypt_resp = IO(Flipped(Decoupled(new QarmaOutputBundle)))
   val dbte_v_bm    = IO(Output(UInt(dbte_num.W)))
   val dbte_sram_w  = IO(Flipped(new MemoryWritePort(UInt(128.W), log2Up(dbte_num), false)))
   val dbte_sram_r  = IO(Flipped(new MemoryReadPort(UInt(128.W), log2Up(dbte_num))))
@@ -150,25 +148,15 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   val cmd_reg            = regFile(chk_cmd)
   val cmd_reg_struct     = cmd_reg.asTypeOf(new DBCheckerCommand)
   val mtdt_reg           = Cat(regFile(mtdt_hi), regFile(mtdt_lo))
-  val mtdt_modifier      = mtdt_reg.asTypeOf(new DBCheckerMtdt).get_modifier
+  val dbte_text          = Wire(new DBCheckerMtdt)
   val res_reg            = regFile(chk_res)
   val err_cnt_reg        = regFile(chk_err_cnt)
   val err_cnt_reg_struct = err_cnt_reg.asTypeOf(new DBCheckerErrCnt)
   val err_info_reg       = regFile(chk_err_info)
   val err_mtdt_reg       = regFile(chk_err_mtdt)
 
-  // encrypt req: used when alloc DBTE
-  // temproarily not used
-  encrypt_req.valid             := false.B
-  encrypt_req.bits.encrypt      := 1.U
-  encrypt_req.bits.tweak        := "hDEADBEEFDEADBEEF".U
-  encrypt_req.bits.actual_round := 3.U
-
-  encrypt_req.bits.text := mtdt_modifier // Build a new DBTE entry
-  encrypt_req.bits.keyh := regFile(chk_keyh)
-  encrypt_req.bits.keyl := regFile(chk_keyl)
-
-  encrypt_resp.ready := false.B
+  dbte_text := mtdt_reg.asTypeOf(new DBCheckerMtdt)
+  dbte_text.id := dbte_alloc_id
 
   when(cmd_reg_struct.status === cmd_status_req) { // command is valid
     switch(cmd_reg_struct.op) {
@@ -201,36 +189,22 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
         }
       }
       is(cmd_op_alloc) { // alloc
-        switch(dbte_alloc_state) {
-          is(DBTEAllocState.WaitEncryptReq) {
-            // Start the allocation process
-            encrypt_req.valid := true.B
-            when(encrypt_req.ready) { dbte_alloc_state := DBTEAllocState.WaitEncryptResp }
-          }
-          is(DBTEAllocState.WaitEncryptResp) {
-            // Wait for the encryption to complete
-            encrypt_resp.ready := true.B
-            when(encrypt_resp.valid) {
-              val e_mtdt = encrypt_resp.bits.result.asTypeOf(UInt(64.W))
-              when(!dbte_v_bitmap(e_mtdt(63, 64 - log2Up(dbte_num)))) { // alloc success
-                dbte_alloc_id := 0.U
-                cmd_reg       := Cat(cmd_status_ok, cmd_reg(63 - cmd_status_ok.getWidth, 0)) // clear v
-                res_reg             := encrypt_resp.bits.result // return encrypted metadata
-                dbte_v_bitmap       := dbte_v_bitmap.bitSet(e_mtdt(63, 64 - log2Up(dbte_num)), true.B)
-                dbte_sram_w.address := e_mtdt(63, 64 - log2Up(dbte_num))
-                dbte_sram_w.enable  := true.B
-                dbte_sram_w.data    := mtdt_reg
-              }.otherwise {
-                when(dbte_alloc_id === (1.U << dbte_alloc_id.getWidth) - 1.U) { // alloc fail, corresponding dbtes are all full
-                  dbte_alloc_id := 0.U
-                  cmd_reg       := Cat(cmd_status_error, cmd_reg(63 - cmd_status_error.getWidth, 0)) // clear v
-                  res_reg       := encrypt_resp.bits.result                                          // return the last failed encrypted metadata, software can switch it
-                }.otherwise { // change id, retry
-                  dbte_alloc_id := dbte_alloc_id + 1.U
-                }
-              }
-              dbte_alloc_state := DBTEAllocState.WaitEncryptReq
-            }
+        val dbte_index = (dbte_text.get_hash_index)(15, 16 - log2Up(dbte_num)) // use a simple xor to add randomness
+        when(!dbte_v_bitmap(dbte_index)) { // alloc success
+          dbte_alloc_id := 0.U
+          cmd_reg       := Cat(cmd_status_ok, cmd_reg(63 - cmd_status_ok.getWidth, 0)) // clear v
+          res_reg             := Cat(dbte_index, 0.U(52.W)) // return encrypted metadata
+          dbte_v_bitmap       := dbte_v_bitmap.bitSet(dbte_index, true.B)
+          dbte_sram_w.address := dbte_index
+          dbte_sram_w.enable  := true.B
+          dbte_sram_w.data    := mtdt_reg
+        }.otherwise {
+          when(dbte_alloc_id === (1.U << dbte_alloc_id.getWidth) - 1.U) { // alloc fail, corresponding dbtes are all full
+            dbte_alloc_id := 0.U
+            cmd_reg       := Cat(cmd_status_error, cmd_reg(63 - cmd_status_error.getWidth, 0)) // clear v
+            res_reg       := Cat(dbte_index, 0.U(52.W))                                          // return the last failed encrypted metadata, software can switch it
+          }.otherwise { // change id, retry
+            dbte_alloc_id := dbte_alloc_id + 1.U
           }
         }
       }
@@ -286,10 +260,6 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
     state.asUInt,
     cmd_reg_struct.status,
     dbte_alloc_state.asUInt,
-    dbte_alloc_id,
-    encrypt_req.valid.asUInt,
-    encrypt_req.ready.asUInt,
-    encrypt_resp.valid.asUInt,
-    encrypt_resp.ready.asUInt
+    dbte_alloc_id
   )
 }

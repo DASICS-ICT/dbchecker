@@ -20,13 +20,10 @@ class DBChecker extends Module with DBCheckerConst {
 
   // DBTE sram table, 128 bits each
   val dbte_mem      = SRAM(dbte_num, UInt(128.W), 2, 1, 0)
-  val qarma_encrypt = Module(new QarmaMultiCycle)
 
   // ctrl module
   val ctrl = Module(new DBCheckerCtrl)
   ctrl.s_axil <> s_axil_ctrl
-  qarma_encrypt.input <> ctrl.encrypt_req
-  qarma_encrypt.output <> ctrl.encrypt_resp
   dbte_mem.writePorts(0) <> ctrl.dbte_sram_w
   dbte_mem.readPorts(0) <> ctrl.dbte_sram_r
 // tx direction is not used currently
