@@ -8,7 +8,8 @@ class DBChecker extends Module with DBCheckerConst {
   val m_axi_io_tx = IO(new AxiMaster(32, 32))
   val s_axi_io_tx = IO(new AxiSlave(32, 32))
   val m_axi_io_rx = IO(new AxiMaster(32, 128))
-  val s_axi_io_rx = IO(new AxiSlave(64, 128))
+  val s_axi_io_rx = IO(new AxiSlave(64, 128, idWidth = 4))
+  // val m_axi_ctrl = IO(new AxiMaster(32, 128))
   val s_axil_ctrl = IO(new AxiLiteSlave(32, 32))
 
   val debug_if = IO(new Bundle {
@@ -23,6 +24,7 @@ class DBChecker extends Module with DBCheckerConst {
 
   // ctrl module
   val ctrl = Module(new DBCheckerCtrl)
+  // ctrl.m_axi <> m_axi_ctrl
   ctrl.s_axil <> s_axil_ctrl
   dbte_mem.writePorts(0) <> ctrl.dbte_sram_w
   dbte_mem.readPorts(0) <> ctrl.dbte_sram_r

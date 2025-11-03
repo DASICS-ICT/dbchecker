@@ -57,7 +57,8 @@ trait DBCheckerConst {
 }
 
 class DBCheckerEnCtl extends Bundle with DBCheckerConst{
-  val reserved = UInt(58.W)
+  val byp_dev_bm = UInt(16.W) // bypass device ID bitmap
+  val reserved = UInt(42.W)
   val err_rpt = Bool() // WO, when stall, write 1 to send error to bus
   val err_byp  = Bool()  // WO, when stall, write 1 to bypass
   val stall_mode = Bool() // 0: non-stall when error, 1: stall when error
@@ -148,15 +149,8 @@ object DBCheckerState extends ChiselEnum {
 }
 
 // Pipeline passed structure
-
-class DBCheckerPipeIn     extends Bundle with DBCheckerConst {
-  val axi_a      = new AxiAddr(64)
-  val axi_a_type = Bool()
-  val dbte_v_bm  = Vec(dbte_num, Bool())
-  val en         = Bool()
-}
 class DBCheckerPipeMedium extends Bundle with DBCheckerConst {
-  val axi_a      = new AxiAddr(64)
+  val axi_a      = new AxiAddr(64, idWidth = 4)
   val axi_a_type = Bool()
   val dbte       = UInt(128.W)
   val bypass     = Bool() // bypass checker

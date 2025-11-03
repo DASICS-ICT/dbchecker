@@ -7,6 +7,7 @@ import axi._
 class DBCheckerCtrl extends Module with DBCheckerConst {
   // io
   val s_axil       = IO(new AxiLiteSlave(32, 32))
+  // val m_axi        = IO(new AxiMaster(32, 128))
   val ctrl_reg     = IO(Output(Vec(RegNum, UInt(64.W))))
   val dbte_v_bm    = IO(Output(UInt(dbte_num.W)))
   val dbte_sram_w  = IO(Flipped(new MemoryWritePort(UInt(128.W), log2Up(dbte_num), false)))
