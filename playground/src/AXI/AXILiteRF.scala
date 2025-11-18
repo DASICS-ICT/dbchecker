@@ -62,7 +62,8 @@ class AXILiteRF(addrWidth: Int = 32, dataWidth: Int = 32, Depth: Int = 4) extend
       when(index < Depth.U && readAddrReg(log2Ceil(dataWidth / 8) - 1, 0) === 0.U) {
         s_axil.r.bits.data := regFile(index)
       }.otherwise {
-        s_axil.r.bits.resp := 2.U // SLVERR for invalid address
+        s_axil.r.bits.data := 0.U
+        s_axil.r.bits.resp := 0.U // fake SLVERR for invalid address
       }
       when(s_axil.r.ready) {
         state := AXILiteState.Idle
@@ -77,7 +78,7 @@ class AXILiteRF(addrWidth: Int = 32, dataWidth: Int = 32, Depth: Int = 4) extend
         val wmask = Cat((0 until (dataWidth / 8)).reverse.map(i => Fill(8, writeStrbReg(i))))
         regFile(index) := (regFile(index) & ~wmask) | (writeDataReg & wmask)
       }.otherwise {
-        s_axil.b.bits.resp := 2.U // SLVERR for invalid address
+        s_axil.b.bits.resp := 0.U // fake SLVERR for invalid address
       }
       state := AXILiteState.writeResp
     }

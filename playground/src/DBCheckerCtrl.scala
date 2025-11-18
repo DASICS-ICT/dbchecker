@@ -73,7 +73,8 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
           }
         }
       }.otherwise {
-        s_axil.r.bits.resp := 2.U // SLVERR for invalid address
+        s_axil.r.bits.data := 0.U
+        s_axil.r.bits.resp := 0.U // fake SLVERR for invalid address
       }
       when(s_axil.r.ready) {
         state := AXILiteState.Idle
@@ -104,7 +105,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
           )
         }
       }.otherwise {
-        s_axil.b.bits.resp := 2.U // SLVERR for invalid address
+        s_axil.b.bits.resp := 0.U // fake SLVERR for invalid address
       }
       state := AXILiteState.writeResp
     }
