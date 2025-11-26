@@ -106,7 +106,7 @@ module dbchecker_wrapper (
   output  [15:0] m_axi_io_tx_wstrb,
   output         m_axi_io_tx_wvalid,
 
-  input  [3:0]  s_axi_io_rx_arid,
+  input  [4:0]  s_axi_io_rx_arid,
   input  [63:0] s_axi_io_rx_araddr,
   input  [1:0]  s_axi_io_rx_arburst,
   input  [3:0]  s_axi_io_rx_arcache,
@@ -118,7 +118,7 @@ module dbchecker_wrapper (
   output        s_axi_io_rx_arready,
   input  [2:0]  s_axi_io_rx_arsize,
   input         s_axi_io_rx_arvalid,
-  input  [3:0]  s_axi_io_rx_awid,
+  input  [4:0]  s_axi_io_rx_awid,
   input  [63:0] s_axi_io_rx_awaddr,
   input  [1:0]  s_axi_io_rx_awburst,
   input  [3:0]  s_axi_io_rx_awcache,
@@ -130,11 +130,11 @@ module dbchecker_wrapper (
   output        s_axi_io_rx_awready,
   input  [2:0]  s_axi_io_rx_awsize,
   input         s_axi_io_rx_awvalid,
-  output [3:0]  s_axi_io_rx_bid,
+  output [4:0]  s_axi_io_rx_bid,
   input         s_axi_io_rx_bready,
   output [1:0]  s_axi_io_rx_bresp,
   output        s_axi_io_rx_bvalid,
-  output [3:0]  s_axi_io_rx_rid,
+  output [4:0]  s_axi_io_rx_rid,
   output [127:0]s_axi_io_rx_rdata,
   output        s_axi_io_rx_rlast,
   input         s_axi_io_rx_rready,
@@ -184,8 +184,7 @@ module dbchecker_wrapper (
   output         m_axi_io_rx_wvalid,
 
   output [63:0] debug_if_flow,
-  output [63:0] debug_if_ctrl,
-  output intr_out
+  output [63:0] debug_if_ctrl
 );
 
 DBChecker DBChecker_0(
@@ -360,8 +359,7 @@ DBChecker DBChecker_0(
   .m_axi_io_rx_w_bits_strb(m_axi_io_rx_wstrb),
   .m_axi_io_rx_w_valid(m_axi_io_rx_wvalid),
   .debug_if_flow(debug_if_flow),
-  .debug_if_ctrl(debug_if_ctrl),
-  .intr_out(intr_out)
+  .debug_if_ctrl(debug_if_ctrl)
 );
 
 endmodule

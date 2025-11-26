@@ -8,16 +8,15 @@ class DBChecker extends Module with DBCheckerConst {
   val m_axi_io_tx = IO(new AxiMaster(32, 32))
   val s_axi_io_tx = IO(new AxiSlave(32, 32))
   val m_axi_io_rx = IO(new AxiMaster(32, 128))
-  val s_axi_io_rx = IO(new AxiSlave(64, 128, idWidth = 4))
+  val s_axi_io_rx = IO(new AxiSlave(64, 128, idWidth = 5))
   // val m_axi_ctrl = IO(new AxiMaster(32, 128))
   val s_axil_ctrl = IO(new AxiLiteSlave(32, 32))
 
   val debug_if = IO(new Bundle {
-    val flow = Output(UInt(64.W))
-    val ctrl = Output(UInt(64.W))
+    val flow = Output(UInt(128.W))
+    val ctrl = Output(UInt(128.W))
   })
 
-  val intr_out = IO(Output(Bool()))
 
   // DBTE sram table, 128 bits each
   val dbte_mem      = SRAM(dbte_num, UInt(128.W), 2, 1, 0)
@@ -49,5 +48,4 @@ class DBChecker extends Module with DBCheckerConst {
 
   debug_if.ctrl := ctrl.debug_if
   debug_if.flow := handler.debug_if
-  intr_out := handler.intr_state
 }
