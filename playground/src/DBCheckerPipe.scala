@@ -186,7 +186,7 @@ class DBCheckerPipeStage4R extends Module with DBCheckerConst { // Return_R
   val in_pipe = IO(Flipped(Decoupled(new DBCheckerPipeMedium)))
 
   val s_r_chan  = IO(Decoupled(new AxiReadData(128, idWidth = 5)))
-  val m_ar_chan = IO(Decoupled(new AxiAddr(32)))
+  val m_ar_chan = IO(Decoupled(new AxiAddr(48)))
   val m_r_chan  = IO(Flipped(Decoupled(new AxiReadData(128))))
 
   val pipe_medium_reg = RegInit(0.U.asTypeOf(new DBCheckerPipeMedium))
@@ -199,7 +199,7 @@ class DBCheckerPipeStage4R extends Module with DBCheckerConst { // Return_R
   s_r_chan.valid  := false.B
 
   m_ar_chan.bits      := pipe_medium_reg.axi_a
-  m_ar_chan.bits.addr := pipe_medium_reg.axi_a.addr(31, 0)
+  m_ar_chan.bits.addr := pipe_medium_reg.axi_a.addr(47, 0)
   s_r_chan.bits       := m_r_chan.bits
   s_r_chan.bits.id    := pipe_medium_reg.axi_a.id
 
@@ -239,7 +239,7 @@ class DBCheckerPipeStage4W extends Module with DBCheckerConst { // Return_W
 
   val s_w_chan  = IO(Flipped(Decoupled(new AxiWriteData(128))))
   val s_b_chan  = IO(Decoupled(new AxiWriteResp(idWidth = 5)))
-  val m_aw_chan = IO(Decoupled(new AxiAddr(32)))
+  val m_aw_chan = IO(Decoupled(new AxiAddr(48)))
   val m_w_chan  = IO(Decoupled(new AxiWriteData(128)))
   val m_b_chan  = IO(Flipped(Decoupled(new AxiWriteResp())))
 
@@ -256,7 +256,7 @@ class DBCheckerPipeStage4W extends Module with DBCheckerConst { // Return_W
   s_b_chan.valid := false.B
 
   m_aw_chan.bits      := pipe_medium_reg.axi_a
-  m_aw_chan.bits.addr := pipe_medium_reg.axi_a.addr(31, 0)
+  m_aw_chan.bits.addr := pipe_medium_reg.axi_a.addr(47, 0)
   m_w_chan.bits       := s_w_chan.bits
   s_b_chan.bits.user  := 0.U // dummy
   s_b_chan.bits.resp  := m_b_chan.bits.resp
@@ -299,8 +299,9 @@ class DBCheckerPipeStage4W extends Module with DBCheckerConst { // Return_W
   in_pipe.ready := !pipe_v_reg || transfer_done
 }
 class DBCheckerPipeline extends Module with DBCheckerConst {
-  val m_axi_io_rx  = IO(new AxiMaster(32, 128))
+  val m_axi_io_rx  = IO(new AxiMaster(48, 128))
   val s_axi_io_rx  = IO(new AxiSlave(64, 128, idWidth = 5))
+  val m_axi_dbte   = IO(new AxiMaster(48, 128))
   val ctrl_reg     = IO(Input(Vec(RegNum, UInt(32.W))))
   val dbte_v_bm    = IO(Input(UInt(dbte_num.W)))
   val err_req_r    = IO(Decoupled(new DBCheckerErrReq))
@@ -342,6 +343,8 @@ class DBCheckerPipeline extends Module with DBCheckerConst {
   stage4w.m_aw_chan <> m_axi_io_rx.aw
   stage4w.m_w_chan <> m_axi_io_rx.w
   stage4w.m_b_chan <> m_axi_io_rx.b
+
+  m_axi_dbte <> DontCare
 
   debug_if := stage3.debug_dbte.asUInt
 }

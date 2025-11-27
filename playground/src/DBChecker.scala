@@ -5,11 +5,9 @@ import chisel3.util._
 import axi._
 
 class DBChecker extends Module with DBCheckerConst {
-  val m_axi_io_tx = IO(new AxiMaster(32, 32))
-  val s_axi_io_tx = IO(new AxiSlave(32, 32))
-  val m_axi_io_rx = IO(new AxiMaster(32, 128))
+  val m_axi_io_rx = IO(new AxiMaster(48, 128))
   val s_axi_io_rx = IO(new AxiSlave(64, 128, idWidth = 5))
-  // val m_axi_ctrl = IO(new AxiMaster(32, 128))
+  val m_axi_dbte  = IO(new AxiMaster(48, 128))
   val s_axil_ctrl = IO(new AxiLiteSlave(32, 32))
 
   val debug_if = IO(new Bundle {
@@ -19,7 +17,7 @@ class DBChecker extends Module with DBCheckerConst {
 
 
   // DBTE sram table, 128 bits each
-  val dbte_mem      = SRAM(dbte_num, UInt(128.W), 2, 1, 0)
+  val dbte_mem = SRAM(dbte_num, UInt(128.W), 2, 1, 0)
 
   // ctrl module
   val ctrl = Module(new DBCheckerCtrl)
@@ -27,8 +25,6 @@ class DBChecker extends Module with DBCheckerConst {
   ctrl.s_axil <> s_axil_ctrl
   dbte_mem.writePorts(0) <> ctrl.dbte_sram_w
   dbte_mem.readPorts(0) <> ctrl.dbte_sram_r
-// tx direction is not used currently
-  m_axi_io_tx <> s_axi_io_tx
 
   // ring buffer
   // val rx_rb = Module(new AXIRingBuffer(32, 128, 16))
@@ -45,6 +41,7 @@ class DBChecker extends Module with DBCheckerConst {
   handler.err_req_r <> ctrl.err_req_r
   handler.err_req_w <> ctrl.err_req_w
   handler.dbte_sram_r <> dbte_mem.readPorts(1)
+  handler.m_axi_dbte <> m_axi_dbte
 
   debug_if.ctrl := ctrl.debug_if
   debug_if.flow := handler.debug_if

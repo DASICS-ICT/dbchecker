@@ -56,12 +56,12 @@ class DBCheckerMtdt extends Bundle with DBCheckerConst {
 }
 
 // ---------------------------------------------------
-// |cnt3(15)|cnt2(15)|cnt1(15)|cnt0(15)|latest err(4)|
+// |cnt3(7)|cnt2(7)|cnt1(7)|cnt0(7)|latest err(4)|
 // ---------------------------------------------------
 // 0: bnd out-of-bound error
 // 1: bnd type mismatch error
 // 2: mtdt invalid error
-// 4: nothing error
+// 3: wrong dev_id error
 
 class DBCheckerErrCnt extends Bundle {
   val cnt        = Vec(4, UInt(7.W))
