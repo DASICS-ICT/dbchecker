@@ -437,21 +437,31 @@ proc cr_bd_test_design { parentCell } {
      catch {common::send_gid_msg -ssname BD::TCL -id 2096 -severity "ERROR" "Unable to referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
      return 1
    }
+
+  # Create instance: axi_interconnect_0, and set properties
+  set axi_interconnect_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_interconnect:2.1 axi_interconnect_0 ]
+  set_property -dict [ list \
+   CONFIG.NUM_MI {1} \
+   CONFIG.NUM_SI {2} \
+  ] $axi_interconnect_0
   
   # Create interface connections
+  connect_bd_intf_net -intf_net axi_interconnect_0_M00_AXI [get_bd_intf_pins axi_interconnect_0/M00_AXI] [get_bd_intf_pins axi_vip_output/S_AXI]
   connect_bd_intf_net -intf_net axi_vip_0_M_AXI [get_bd_intf_pins axi_vip_input/M_AXI] [get_bd_intf_pins dbchecker_wrapper_0/s_axi_io_rx]
   connect_bd_intf_net -intf_net axi_vip_ctrl_M_AXI [get_bd_intf_pins axi_vip_ctrl/M_AXI] [get_bd_intf_pins dbchecker_wrapper_0/s_axil_ctrl]
-  connect_bd_intf_net -intf_net dbchecker_wrapper_0_m_axi_io_rx [get_bd_intf_pins axi_vip_output/S_AXI] [get_bd_intf_pins dbchecker_wrapper_0/m_axi_io_rx]
+  connect_bd_intf_net -intf_net dbchecker_wrapper_0_m_axi_dbte [get_bd_intf_pins axi_interconnect_0/S00_AXI] [get_bd_intf_pins dbchecker_wrapper_0/m_axi_dbte]
+  connect_bd_intf_net -intf_net dbchecker_wrapper_0_m_axi_io_rx [get_bd_intf_pins axi_interconnect_0/S01_AXI] [get_bd_intf_pins dbchecker_wrapper_0/m_axi_io_rx]
 
   # Create port connections
   connect_bd_net -net dbchecker_reset_gen_Res [get_bd_pins dbchecker_reset_gen/Res] [get_bd_pins dbchecker_wrapper_0/reset]
-  connect_bd_net -net sim_clk_gen_0_clk [get_bd_ports aclk_0] [get_bd_pins axi_vip_ctrl/aclk] [get_bd_pins axi_vip_input/aclk] [get_bd_pins axi_vip_output/aclk] [get_bd_pins dbchecker_wrapper_0/clock]
-  connect_bd_net -net sim_rst_gen_0_rst [get_bd_ports aresetn_0] [get_bd_pins axi_vip_ctrl/aresetn] [get_bd_pins axi_vip_input/aresetn] [get_bd_pins axi_vip_output/aresetn] [get_bd_pins dbchecker_reset_gen/Op1]
+  connect_bd_net -net sim_clk_gen_0_clk [get_bd_ports aclk_0] [get_bd_pins axi_interconnect_0/ACLK] [get_bd_pins axi_interconnect_0/M00_ACLK] [get_bd_pins axi_interconnect_0/S00_ACLK] [get_bd_pins axi_interconnect_0/S01_ACLK] [get_bd_pins axi_vip_ctrl/aclk] [get_bd_pins axi_vip_input/aclk] [get_bd_pins axi_vip_output/aclk] [get_bd_pins dbchecker_wrapper_0/clock]
+  connect_bd_net -net sim_rst_gen_0_rst [get_bd_ports aresetn_0] [get_bd_pins axi_vip_ctrl/aresetn] [get_bd_pins axi_vip_input/aresetn] [get_bd_pins axi_vip_output/aresetn] [get_bd_pins dbchecker_reset_gen/Op1] [get_bd_pins axi_interconnect_0/ARESETN] [get_bd_pins axi_interconnect_0/S00_ARESETN] [get_bd_pins axi_interconnect_0/M00_ARESETN] [get_bd_pins axi_interconnect_0/S01_ARESETN]
 
   # Create address segments
   assign_bd_address -offset 0x00000000 -range 0x000100000000 -target_address_space [get_bd_addr_spaces axi_vip_ctrl/Master_AXI] [get_bd_addr_segs dbchecker_wrapper_0/s_axil_ctrl/reg0] -force
   assign_bd_address -offset 0x00000000 -range 0x00010000000000000000 -target_address_space [get_bd_addr_spaces axi_vip_input/Master_AXI] [get_bd_addr_segs dbchecker_wrapper_0/s_axi_io_rx/reg0] -force
-  assign_bd_address -offset 0x40000000 -range 0x00010000 -target_address_space [get_bd_addr_spaces dbchecker_wrapper_0/m_axi_io_rx] [get_bd_addr_segs axi_vip_output/S_AXI/Reg] -force
+  assign_bd_address -offset 0x40000000 -range 0x000100000 -target_address_space [get_bd_addr_spaces dbchecker_wrapper_0/m_axi_dbte] [get_bd_addr_segs axi_vip_output/S_AXI/Reg] -force
+  assign_bd_address -offset 0x40000000 -range 0x000100000 -target_address_space [get_bd_addr_spaces dbchecker_wrapper_0/m_axi_io_rx] [get_bd_addr_segs axi_vip_output/S_AXI/Reg] -force
 
 
   # Restore current instance
