@@ -427,6 +427,12 @@ proc cr_bd_test_design { parentCell } {
    CONFIG.LOGO_FILE {data/sym_notgate.png} \
  ] $dbchecker_reset_gen
 
+  # Create instance: xlconstant_0, and set properties
+  set xlconstant_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 xlconstant_0 ]
+  set_property -dict [ list \
+   CONFIG.CONST_WIDTH {5} \
+  ] $xlconstant_0
+
   # Create instance: dbchecker_wrapper_0, and set properties
   set block_name dbchecker_wrapper
   set block_cell_name dbchecker_wrapper_0
@@ -456,6 +462,7 @@ proc cr_bd_test_design { parentCell } {
   connect_bd_net -net dbchecker_reset_gen_Res [get_bd_pins dbchecker_reset_gen/Res] [get_bd_pins dbchecker_wrapper_0/reset]
   connect_bd_net -net sim_clk_gen_0_clk [get_bd_ports aclk_0] [get_bd_pins axi_interconnect_0/ACLK] [get_bd_pins axi_interconnect_0/M00_ACLK] [get_bd_pins axi_interconnect_0/S00_ACLK] [get_bd_pins axi_interconnect_0/S01_ACLK] [get_bd_pins axi_vip_ctrl/aclk] [get_bd_pins axi_vip_input/aclk] [get_bd_pins axi_vip_output/aclk] [get_bd_pins dbchecker_wrapper_0/clock]
   connect_bd_net -net sim_rst_gen_0_rst [get_bd_ports aresetn_0] [get_bd_pins axi_vip_ctrl/aresetn] [get_bd_pins axi_vip_input/aresetn] [get_bd_pins axi_vip_output/aresetn] [get_bd_pins dbchecker_reset_gen/Op1] [get_bd_pins axi_interconnect_0/ARESETN] [get_bd_pins axi_interconnect_0/S00_ARESETN] [get_bd_pins axi_interconnect_0/M00_ARESETN] [get_bd_pins axi_interconnect_0/S01_ARESETN]
+  connect_bd_net -net xlconstant_0_dout [get_bd_pins dbchecker_wrapper_0/s_axi_io_rx_arid] [get_bd_pins dbchecker_wrapper_0/s_axi_io_rx_awid] [get_bd_pins xlconstant_0/dout]
 
   # Create address segments
   assign_bd_address -offset 0x00000000 -range 0x000100000000 -target_address_space [get_bd_addr_spaces axi_vip_ctrl/Master_AXI] [get_bd_addr_segs dbchecker_wrapper_0/s_axil_ctrl/reg0] -force
