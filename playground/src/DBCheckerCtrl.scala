@@ -205,8 +205,8 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   // DBTE refill handler
   val refill_state = RegInit(DBCheckerRefillState.AR)
   val refill_index_reg = RegInit(0.U(16.W))
-  val refill_index_reg_hi = refill_index_reg(15, 16 - log2Up(dbte_num))
   val refill_data_reg  = RegInit(0.U(128.W))
+  val refill_index_reg_hi = refill_index_reg(15, 16 - log2Up(dbte_num))
   val dbte_base = Cat(regFile(chk_dbte_mb_hi), regFile(chk_dbte_mb_lo))
   val index_collision = refill_index_reg === cmd_reg_struct.get_index
 
@@ -218,61 +218,76 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   m_axi_dbte.b.ready := false.B 
 
   // ar / r are used to read DBTE entries from memory
-  m_axi_dbte.ar.valid     := refill_state === DBCheckerRefillState.AR && refill_dbte_req_if.valid
+  // bits are preset to values
   m_axi_dbte.ar.bits       := 0.U.asTypeOf(m_axi_dbte.ar.bits)
   m_axi_dbte.ar.bits.addr  := dbte_base + (refill_dbte_req_if.bits.index << 4) // DBTE entries addr from memory
   m_axi_dbte.ar.bits.len   := 0.U
   m_axi_dbte.ar.bits.size  := 4.U // 16 bytes
   m_axi_dbte.ar.bits.burst := 1.U // INCR
 
-  m_axi_dbte.r.ready := refill_state === DBCheckerRefillState.R
+  // valid / ready are preset to false
+  m_axi_dbte.ar.valid      := false.B
+  m_axi_dbte.r.ready       := false.B
 
-  refill_dbte_req_if.ready := refill_state === DBCheckerRefillState.AR && m_axi_dbte.ar.ready
-
-  refill_dbte_rsp_if.valid := refill_state === DBCheckerRefillState.RSP
-  refill_dbte_rsp_if.bits.dbte := refill_data_reg
+  refill_dbte_req_if.ready := false.B
+  refill_dbte_rsp_if.valid := false.B
+  refill_dbte_rsp_if.bits.dbte := 0.U
 
   switch(refill_state) {
     is(DBCheckerRefillState.AR) {
+      m_axi_dbte.ar.valid := refill_dbte_req_if.valid
+      refill_dbte_req_if.ready := m_axi_dbte.ar.ready
       when(m_axi_dbte.ar.fire) {
         refill_index_reg := refill_dbte_req_if.bits.index
         refill_state := DBCheckerRefillState.R
       }
     }
     is(DBCheckerRefillState.R) {
+      m_axi_dbte.r.ready := true.B
       when(m_axi_dbte.r.fire) {
+        // save data to keep good timing
         refill_data_reg   := m_axi_dbte.r.bits.data
-        when (m_axi_dbte.r.bits.data.asTypeOf(new DBCheckerMtdt).v) {
-          refill_state := DBCheckerRefillState.WB
-        }.otherwise{
-          refill_state := DBCheckerRefillState.RSP
-        }
+        refill_state      := DBCheckerRefillState.WB
       }
     }
     is(DBCheckerRefillState.WB) {
-      // write back to SRAM and set bitmap
+      val rb_mtdt = refill_data_reg.asTypeOf(new DBCheckerMtdt)
+      when (rb_mtdt.v) {
+        // write back to SRAM and set bitmap
         when(is_freeing) {
           // do not write back when freeing
           // if the index is euqal between the one being freed and refilled, it is a collision
           // in this case, we need to clear the valid bit
           when(index_collision) {
-            val invalid_mtdt = WireInit(refill_data_reg.asTypeOf(new DBCheckerMtdt))
+            val invalid_mtdt = WireInit(rb_mtdt)
             invalid_mtdt.v  := false.B
-            refill_data_reg := invalid_mtdt.asUInt
-            refill_state := DBCheckerRefillState.RSP
+            refill_dbte_rsp_if.valid := true.B
+            refill_dbte_rsp_if.bits.dbte := invalid_mtdt.asUInt
+            when(refill_dbte_rsp_if.ready) {
+              m_axi_dbte.r.ready := true.B
+              refill_state := DBCheckerRefillState.AR
+            }
           }
           // otherwise wait until freeing is done
         }.otherwise {
           dbte_sram_w.address := refill_index_reg_hi
-          dbte_sram_w.data    := refill_data_reg
+          dbte_sram_w.data    := rb_mtdt.asUInt
           dbte_sram_w.enable  := true.B
           dbte_v_bitmap       := dbte_v_bitmap | (1.U << refill_index_reg_hi)
-          refill_state := DBCheckerRefillState.RSP
+          refill_dbte_rsp_if.valid := true.B
+          refill_dbte_rsp_if.bits.dbte := rb_mtdt.asUInt
+          when(refill_dbte_rsp_if.ready) {
+            m_axi_dbte.r.ready := true.B
+            refill_state := DBCheckerRefillState.AR
+          }
         }
-      }
-    is(DBCheckerRefillState.RSP) {
-      when(refill_dbte_rsp_if.ready) {
-        refill_state := DBCheckerRefillState.AR
+      }.otherwise{
+        refill_dbte_rsp_if.valid := true.B
+        refill_dbte_rsp_if.bits.dbte := rb_mtdt.asUInt
+        when(refill_dbte_rsp_if.ready) {
+          m_axi_dbte.r.ready := true.B
+          refill_state := DBCheckerRefillState.AR
+        }
       }
     }
   }

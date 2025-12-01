@@ -125,8 +125,8 @@ class DBCheckerDBTERsp extends Bundle with DBCheckerConst {
   val dbte = UInt(128.W)
 }
 object DBCheckerFetchState extends ChiselEnum {
-  val FETCH, RREQ, RRSP, OUTPUT = Value
+  val RREQ, RRSP = Value
 }
 object DBCheckerRefillState extends ChiselEnum {
-  val AR, R, WB, RSP = Value
+  val AR, R, WB = Value
 }
