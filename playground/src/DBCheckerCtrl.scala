@@ -15,6 +15,9 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   val dbte_sram_r  = IO(Flipped(new MemoryReadPort(UInt(128.W), log2Up(dbte_num))))
   val err_req_r    = IO(Flipped(Decoupled(new DBCheckerErrReq)))
   val err_req_w    = IO(Flipped(Decoupled(new DBCheckerErrReq)))
+  val refill_dbte_req_if = IO(Flipped(Decoupled(new DBCheckerDBTEReq)))
+  val refill_dbte_rsp_if = IO(Decoupled(new DBCheckerDBTERsp))
+  val m_axi_dbte   = IO(new AxiMaster(48, 128))
 
   val debug_if = IO(Output(UInt(128.W)))
 
@@ -129,15 +132,21 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   val err_addr_lo_reg    = regFile(chk_err_addr_lo)
   val err_addr_hi_reg    = regFile(chk_err_addr_hi)
 
+  val is_freeing = (cmd_reg_struct.v && cmd_reg_struct.op === cmd_op_free) || free_sram_wait;
+
+  val refill_state = RegInit(ctrl_dbte_refill_idle.U)
+  val refill_index_reg = RegInit(0.U(16.W))
+  val refill_data_reg  = RegInit(0.U(128.W))
+
   when(cmd_reg_struct.v) { // command is valid
     switch(cmd_reg_struct.op) {
       is(cmd_op_free) { // free
         // Free the DBTE entry
         val clear_all  = cmd_reg_struct.imm(16)
         val dbte_cache_index = cmd_reg_struct.get_index_hi
-        cmd_reg       := Cat(false.B, cmd_reg(30, 0)) // clear v
         when (clear_all) {
           dbte_v_bitmap := 0.U
+          cmd_reg       := Cat(false.B, cmd_reg(30, 0)) // clear v
         }
         .elsewhen(dbte_v_bitmap(dbte_cache_index)){
           when(!free_sram_wait) {
@@ -151,6 +160,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
               // the entry to be freed matches the cached one
               dbte_v_bitmap := dbte_v_bitmap & ~(1.U << dbte_cache_index)
             }
+            cmd_reg       := Cat(false.B, cmd_reg(30, 0)) // clear v
             // otherwise do nothing
           }
         }
@@ -189,6 +199,92 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   }
   err_req_r.ready := cnt_enable
   err_req_w.ready := cnt_enable
+
+  // DBTE refill handler
+  m_axi_dbte.aw.valid := false.B
+  m_axi_dbte.aw.bits  := 0.U.asTypeOf(m_axi_dbte.aw.bits)
+
+  m_axi_dbte.w.valid := false.B
+  m_axi_dbte.w.bits  := 0.U.asTypeOf(m_axi_dbte.w.bits)
+
+  m_axi_dbte.b.ready := false.B 
+
+  m_axi_dbte.ar.valid := false.B
+  m_axi_dbte.ar.bits  := 0.U.asTypeOf(m_axi_dbte.ar.bits)
+
+  m_axi_dbte.r.ready := false.B
+
+  m_axi_dbte.ar.bits.len  := 0.U
+  m_axi_dbte.ar.bits.size := 4.U // 16 bytes
+  m_axi_dbte.ar.bits.burst := 1.U // INCR
+
+  refill_dbte_req_if.ready := false.B
+  refill_dbte_rsp_if.valid := false.B
+  refill_dbte_rsp_if.bits  := 0.U.asTypeOf(new DBCheckerDBTERsp)
+
+  val dbte_base = Cat(regFile(chk_dbte_mb_hi), regFile(chk_dbte_mb_lo))
+  val refill_addr_offset = refill_index_reg << 4 // each entry is 16 bytes
+  val refill_addr = dbte_base + refill_addr_offset
+  val index_collesion = refill_index_reg === cmd_reg_struct.get_index
+  val refill_dbte_valid = RegInit(false.B)
+
+  switch(refill_state) {
+    is(ctrl_dbte_refill_idle.U) {
+      when(refill_dbte_req_if.valid) {
+        refill_dbte_req_if.ready := true.B
+        refill_index_reg         := refill_dbte_req_if.bits.index
+        refill_state             := ctrl_dbte_refill_ar.U
+      }
+    }
+    is(ctrl_dbte_refill_ar.U) {
+      m_axi_dbte.ar.valid     := true.B
+      m_axi_dbte.ar.bits.addr := refill_addr
+      when(m_axi_dbte.ar.fire) {
+        refill_state := ctrl_dbte_refill_r.U
+      }
+    }
+    is(ctrl_dbte_refill_r.U) {
+      m_axi_dbte.r.ready := true.B
+      when(m_axi_dbte.r.fire) {
+        refill_data_reg   := m_axi_dbte.r.bits.data
+        refill_state      := ctrl_dbte_refill_wb.U
+        refill_dbte_valid := m_axi_dbte.r.bits.data.asTypeOf(new DBCheckerMtdt).v
+      }
+    }
+    is(ctrl_dbte_refill_wb.U) {
+      // write back to SRAM and set bitmap
+      when(refill_dbte_valid) {
+        when(is_freeing) {
+          // do not write back when freeing
+          // if the index is euqal between the one being freed and refilled, it is a collision
+          // in this case, we need to clear the valid bit
+          when(index_collesion) {
+            refill_state := ctrl_dbte_refill_rsp.U
+            refill_dbte_valid := false.B
+          }.otherwise {
+            // wait until freeing is done
+          }
+        }.otherwise {
+          dbte_sram_w.address := refill_index_reg(15, 16 - log2Up(dbte_num))
+          dbte_sram_w.data    := refill_data_reg
+          dbte_sram_w.enable  := true.B
+          dbte_v_bitmap       := dbte_v_bitmap | (1.U << refill_index_reg)
+          refill_state := ctrl_dbte_refill_rsp.U
+        }
+      }.otherwise {
+        // invalid entry, do not write back
+        refill_state := ctrl_dbte_refill_rsp.U
+      }
+    }
+    is(ctrl_dbte_refill_rsp.U) {
+      refill_dbte_rsp_if.valid := true.B
+      refill_dbte_rsp_if.bits.dbte  := refill_data_reg
+      refill_dbte_rsp_if.bits.v := refill_dbte_valid
+      when(refill_dbte_rsp_if.ready) {
+        refill_state := ctrl_dbte_refill_idle.U
+      }
+    }
+  }
 
   debug_if := Cat(cmd_reg,err_info_reg,err_addr_hi_reg,err_addr_lo_reg) // reserved
 }

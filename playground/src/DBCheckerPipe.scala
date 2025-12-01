@@ -48,6 +48,10 @@ class DBCheckerPipeStage1 extends Module with DBCheckerConst { // readDBTE
   val out_pipe    = IO(Decoupled(new DBCheckerPipeMedium))
   val dbte_v_bm   = IO(Input(UInt(dbte_num.W)))
   val dbte_mem_if = IO(Flipped(new MemoryReadPort(UInt(128.W), log2Up(dbte_num))))
+  val dbte_refill_req_if = IO(Decoupled(new DBCheckerDBTEReq))
+  val dbte_refill_rsp_if = IO(Flipped(Decoupled(new DBCheckerDBTERsp)))
+
+  val fsm_state = RegInit(pipeline_dbte_fetch_req.U(3.W))
 
   val pipe_v_reg      = RegInit(false.B)
   val pipe_medium_reg = RegInit(0.U.asTypeOf(new DBCheckerPipeMedium))
@@ -60,27 +64,109 @@ class DBCheckerPipeStage1 extends Module with DBCheckerConst { // readDBTE
     pipe_medium_reg := 0.U.asTypeOf(new DBCheckerPipeMedium)
   }
 
-  val target_addr = Mux(in_pipe.fire, in_pipe.bits.axi_a.addr, pipe_medium_reg.axi_a.addr)
-  val dbte_cache_index  = target_addr.asTypeOf(new DBCheckerPtr).get_index_hi
-  val err_finv    = !dbte_v_bm(dbte_cache_index) && !pipe_medium_reg.bypass
+  /*
+    dbte fetch fsm
+    dbte_fetch_req: init state
+      if dbte_v_bm[index] == 0, go to refill_req state;
+      if dbte_v_bm[index] == 1, send dbte_mem_if req and go to fetch_rsp state
+    dbte_fetch_rsp: wait for dbte_mem_if rsp, 
+      then compare inpipe.addr.dbte_index with Cat(dbte_mem_if addr, dbte_mem_if data.index_offset)
+      if equal, output dbte to the next pipeline and go to init state
+      else, go to the dbte_refill_req state to send refill req
+    dbte_refill_req: send refill req to ctrl module, go to refill_rsp state
+    dbte_refill_rsp: wait for refill rsp, then output dbte to the next pipeline and go to init state                            
+  */
 
-  val err_info    = Wire(new DBCheckerErrInfo)
-  err_info.err_mtdt_index := target_addr.asTypeOf(new DBCheckerPtr).get_index
-  err_info.err_info       := 0.U // unused in finv case
+  val addr_ptr = pipe_medium_reg.axi_a.addr.asTypeOf(new DBCheckerPtr)
+  val dbte_cache_index = addr_ptr.get_index_hi
+  val dbte_index = addr_ptr.get_index
+  val refilled = RegInit(false.B)
+  val bypass   = Mux(in_pipe.fire, in_pipe.bits.bypass, pipe_medium_reg.bypass)
 
-  dbte_mem_if.address := dbte_cache_index
   dbte_mem_if.enable  := true.B
+  dbte_mem_if.address := dbte_cache_index
+  val cached_date = dbte_mem_if.data
+  val refilled_dbte = RegInit(0.U(128.W))
+  val refilled_valid = RegInit(false.B)
 
-  in_pipe.ready         := !pipe_v_reg || out_pipe.fire
-  out_pipe.valid        := pipe_v_reg
-  out_pipe.bits         := pipe_medium_reg
-  out_pipe.bits.dbte := dbte_mem_if.data
-  when(!pipe_medium_reg.err_v && err_finv) {
+  when(dbte_refill_rsp_if.fire) {
+    refilled_dbte := dbte_refill_rsp_if.bits.dbte
+    refilled_valid := dbte_refill_rsp_if.bits.v
+  }
+
+  dbte_refill_req_if.bits.index := dbte_index
+
+  switch(fsm_state) {
+    is(pipeline_dbte_fetch_req.U) {
+      when(pipe_v_reg) {
+        when(bypass) {
+          fsm_state := pipeline_dbte_output.U
+        }.elsewhen(dbte_v_bm(dbte_cache_index)) {
+          fsm_state := pipeline_dbte_fetch_rsp.U
+        }.otherwise {
+          fsm_state := pipeline_dbte_refill_req.U
+        }
+      }.otherwise {
+        fsm_state := pipeline_dbte_fetch_req.U
+      }
+    }
+    is(pipeline_dbte_fetch_rsp.U) {
+      when(dbte_index === Cat(dbte_cache_index, cached_date.asTypeOf(new DBCheckerMtdt).index_offset)) {
+        // metadata match, send to next pipe
+        fsm_state := pipeline_dbte_output.U
+      }.otherwise {
+        // not match, need refill
+        fsm_state         := pipeline_dbte_refill_req.U
+      }
+    }
+    is(pipeline_dbte_refill_req.U) {
+      when(dbte_refill_req_if.fire) {
+        fsm_state := pipeline_dbte_refill_rsp.U
+      }.otherwise {
+        fsm_state := pipeline_dbte_refill_req.U
+      }
+    }
+    is(pipeline_dbte_refill_rsp.U) {
+      when(dbte_refill_rsp_if.fire) {
+        fsm_state := pipeline_dbte_output.U
+        refilled := true.B
+      }.otherwise {
+        fsm_state := pipeline_dbte_refill_rsp.U
+      }
+    }
+    is(pipeline_dbte_output.U) {
+      when(out_pipe.fire) {
+        fsm_state := pipeline_dbte_fetch_req.U
+        refilled := false.B
+      }.otherwise {
+        fsm_state := pipeline_dbte_output.U
+      }
+    }
+  }
+
+  in_pipe.ready := !pipe_v_reg || out_pipe.fire
+
+  out_pipe.valid := pipe_v_reg && (fsm_state === pipeline_dbte_output.U)
+  out_pipe.bits := pipe_medium_reg
+  out_pipe.bits.dbte := Mux(refilled, refilled_dbte, cached_date)
+
+  dbte_refill_req_if.valid := pipe_v_reg && (fsm_state === pipeline_dbte_refill_req.U)
+  dbte_refill_rsp_if.ready := pipe_v_reg && (fsm_state === pipeline_dbte_refill_rsp.U)
+
+  val target_addr = Mux(in_pipe.fire, in_pipe.bits.axi_a.addr, pipe_medium_reg.axi_a.addr)
+
+  val err_finv = !dbte_v_bm(dbte_cache_index) && !pipe_medium_reg.bypass && !refilled_valid
+  val err_info = Wire(new DBCheckerErrInfo)
+  err_info.err_mtdt_index := target_addr.asTypeOf(new DBCheckerPtr).get_index
+  err_info.err_info       := 0.U // metadata invalid, no extra info
+
+  when(out_pipe.fire && err_finv) {
     out_pipe.bits.err_v        := err_finv
     out_pipe.bits.err_req.typ  := err_mtdt_finv
     out_pipe.bits.err_req.addr := target_addr
     out_pipe.bits.err_req.info := err_info.asUInt
   }
+
 }
 
 // stage2-4: backend
@@ -301,12 +387,13 @@ class DBCheckerPipeStage4W extends Module with DBCheckerConst { // Return_W
 class DBCheckerPipeline extends Module with DBCheckerConst {
   val m_axi_io_rx  = IO(new AxiMaster(48, 128))
   val s_axi_io_rx  = IO(new AxiSlave(64, 128, idWidth = 5))
-  val m_axi_dbte   = IO(new AxiMaster(48, 128))
   val ctrl_reg     = IO(Input(Vec(RegNum, UInt(32.W))))
   val dbte_v_bm    = IO(Input(UInt(dbte_num.W)))
   val err_req_r    = IO(Decoupled(new DBCheckerErrReq))
   val err_req_w    = IO(Decoupled(new DBCheckerErrReq))
   val dbte_sram_r  = IO(Flipped(new MemoryReadPort(UInt(128.W), log2Up(dbte_num))))
+  val refill_dbte_req_if = IO(Decoupled(new DBCheckerDBTEReq))
+  val refill_dbte_rsp_if = IO(Flipped(Decoupled(new DBCheckerDBTERsp)))
   val debug_if     = IO(Output(UInt(128.W)))
 
   err_req_w <> DontCare
@@ -326,6 +413,8 @@ class DBCheckerPipeline extends Module with DBCheckerConst {
   stage1.in_pipe <> stage0.out_pipe
   stage1.dbte_v_bm := dbte_v_bm
   stage1.dbte_mem_if <> dbte_sram_r
+  stage1.dbte_refill_req_if <> refill_dbte_req_if
+  stage1.dbte_refill_rsp_if <> refill_dbte_rsp_if
 
   stage2.in_pipe <> stage1.out_pipe
 
@@ -343,8 +432,6 @@ class DBCheckerPipeline extends Module with DBCheckerConst {
   stage4w.m_aw_chan <> m_axi_io_rx.aw
   stage4w.m_w_chan <> m_axi_io_rx.w
   stage4w.m_b_chan <> m_axi_io_rx.b
-
-  m_axi_dbte <> DontCare
 
   debug_if := stage3.debug_dbte.asUInt
 }
