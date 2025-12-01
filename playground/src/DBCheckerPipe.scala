@@ -189,7 +189,7 @@ class DBCheckerPipeStage2 extends Module with DBCheckerConst { // check request 
   when(!pipe_medium_reg.err_v && access_err) {
     out_pipe.bits.err_v        := access_err
     out_pipe.bits.err_req.typ  := Mux(bnd_err, err_bnd_farea, Mux(type_mismatch, err_bnd_ftype, err_wrong_dev))
-    out_pipe.bits.err_req.addr := in_pipe.bits.axi_a.addr
+    out_pipe.bits.err_req.addr := addr_ptr.asUInt
     out_pipe.bits.err_req.info := err_info.asUInt
   }
 }
