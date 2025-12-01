@@ -685,13 +685,13 @@
          <obj_property name="ElementShortName">dbte_v_bm[4095:0]</obj_property>
          <obj_property name="ObjectShortName">dbte_v_bm[4095:0]</obj_property>
       </wvobject>
-      <wvobject type="array" fp_name="/dbchecker_sim_tb/UUT/dbchecker_wrapper_0/inst/DBChecker_0/handler/stage1/dbte_mem_if_address">
-         <obj_property name="ElementShortName">dbte_mem_if_address[11:0]</obj_property>
-         <obj_property name="ObjectShortName">dbte_mem_if_address[11:0]</obj_property>
+      <wvobject type="array" fp_name="/dbchecker_sim_tb/UUT/dbchecker_wrapper_0/inst/DBChecker_0/handler/stage1/dbte_sram_if_address">
+         <obj_property name="ElementShortName">dbte_sram_if_address[11:0]</obj_property>
+         <obj_property name="ObjectShortName">dbte_sram_if_address[11:0]</obj_property>
       </wvobject>
-      <wvobject type="array" fp_name="/dbchecker_sim_tb/UUT/dbchecker_wrapper_0/inst/DBChecker_0/handler/stage1/dbte_mem_if_data">
-         <obj_property name="ElementShortName">dbte_mem_if_data[127:0]</obj_property>
-         <obj_property name="ObjectShortName">dbte_mem_if_data[127:0]</obj_property>
+      <wvobject type="array" fp_name="/dbchecker_sim_tb/UUT/dbchecker_wrapper_0/inst/DBChecker_0/handler/stage1/dbte_sram_if_data">
+         <obj_property name="ElementShortName">dbte_sram_if_data[127:0]</obj_property>
+         <obj_property name="ObjectShortName">dbte_sram_if_data[127:0]</obj_property>
       </wvobject>
       <wvobject type="logic" fp_name="/dbchecker_sim_tb/UUT/dbchecker_wrapper_0/inst/DBChecker_0/handler/stage1/in_pipe_ready_0">
          <obj_property name="ElementShortName">in_pipe_ready_0</obj_property>

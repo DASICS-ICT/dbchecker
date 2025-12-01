@@ -47,7 +47,7 @@ class DBCheckerPipeStage1 extends Module with DBCheckerConst { // readDBTE
   val in_pipe     = IO(Flipped(Decoupled(new DBCheckerPipeMedium)))
   val out_pipe    = IO(Decoupled(new DBCheckerPipeMedium))
   val dbte_v_bm   = IO(Input(UInt(dbte_num.W)))
-  val dbte_mem_if = IO(Flipped(new MemoryReadPort(UInt(128.W), log2Up(dbte_num))))
+  val dbte_sram_if = IO(Flipped(new MemoryReadPort(UInt(128.W), log2Up(dbte_num))))
   val dbte_refill_req_if = IO(Decoupled(new DBCheckerDBTEReq))
   val dbte_refill_rsp_if = IO(Flipped(Decoupled(new DBCheckerDBTERsp)))
 
@@ -68,9 +68,9 @@ class DBCheckerPipeStage1 extends Module with DBCheckerConst { // readDBTE
     dbte fetch fsm
     dbte_fetch_req: init state
       if dbte_v_bm[index] == 0, go to refill_req state;
-      if dbte_v_bm[index] == 1, send dbte_mem_if req and go to fetch_rsp state
-    dbte_fetch_rsp: wait for dbte_mem_if rsp, 
-      then compare inpipe.addr.dbte_index with Cat(dbte_mem_if addr, dbte_mem_if data.index_offset)
+      if dbte_v_bm[index] == 1, send dbte_sram_if req and go to fetch_rsp state
+    dbte_fetch_rsp: wait for dbte_sram_if rsp, 
+      then compare inpipe.addr.dbte_index with Cat(dbte_sram_if addr, dbte_sram_if data.index_offset)
       if equal, output dbte to the next pipeline and go to init state
       else, go to the dbte_refill_req state to send refill req
     dbte_refill_req: send refill req to ctrl module, go to refill_rsp state
@@ -83,10 +83,10 @@ class DBCheckerPipeStage1 extends Module with DBCheckerConst { // readDBTE
   val dbte_index_hi = addr_ptr.get_index_hi
   val refilled = RegInit(false.B)
 
-  dbte_mem_if.enable  := true.B
-  dbte_mem_if.address := dbte_index_hi
+  dbte_sram_if.enable  := true.B
+  dbte_sram_if.address := dbte_index_hi
   
-  val cached_dbte = dbte_mem_if.data
+  val cached_dbte = dbte_sram_if.data
   val refilled_dbte = RegInit(0.U(128.W))
   val refilled_valid = RegInit(false.B)
 
@@ -388,7 +388,7 @@ class DBCheckerPipeline extends Module with DBCheckerConst {
 
   stage1.in_pipe <> stage0.out_pipe
   stage1.dbte_v_bm := dbte_v_bm
-  stage1.dbte_mem_if <> dbte_sram_r
+  stage1.dbte_sram_if <> dbte_sram_r
   stage1.dbte_refill_req_if <> refill_dbte_req_if
   stage1.dbte_refill_rsp_if <> refill_dbte_rsp_if
 
