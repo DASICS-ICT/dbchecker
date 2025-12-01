@@ -33,7 +33,7 @@ clean:
 	-rm -rf $(OUT_DIR) $(BUILD_DIR)
 
 gen_sim_prj:
-	cd sim_env && vivado -mode batch -source dbchecker_test.tcl	
+	cd sim_env && vivado -mode batch -source dbchecker_test.tcl	-notrace
 
 clean_sim_prj:
 	-rm -rf sim_env/dbchecker_test sim_env/.Xil sim_env/vivado*

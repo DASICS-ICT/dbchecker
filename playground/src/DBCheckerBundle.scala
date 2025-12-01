@@ -32,19 +32,6 @@ trait DBCheckerConst {
   // checker error counter register (0x7, RO)
   val chk_err_cnt     = 0x7 // 0x1C
 
-  // pipeline dbte fetch fsm states
-  val pipeline_dbte_fetch_req  = 0x0
-  val pipeline_dbte_fetch_rsp  = 0x1
-  val pipeline_dbte_refill_req = 0x2
-  val pipeline_dbte_refill_rsp = 0x3
-  val pipeline_dbte_output     = 0x4
-
-  // ctrl dbte refill fsm states
-  val ctrl_dbte_refill_idle = 0x0
-  val ctrl_dbte_refill_ar   = 0x1
-  val ctrl_dbte_refill_r    = 0x2
-  val ctrl_dbte_refill_wb   = 0x3
-  val ctrl_dbte_refill_rsp  = 0x4
 
   def cmd_op_free    = 0.U(1.W)
   def cmd_op_clr_err = 1.U(1.W)
@@ -136,5 +123,10 @@ class DBCheckerDBTEReq extends Bundle with DBCheckerConst {
 
 class DBCheckerDBTERsp extends Bundle with DBCheckerConst {
   val dbte = UInt(128.W)
-  val v    = Bool()
+}
+object DBCheckerFetchState extends ChiselEnum {
+  val FETCH, RREQ, RRSP, OUTPUT = Value
+}
+object DBCheckerRefillState extends ChiselEnum {
+  val AR, R, WB, RSP = Value
 }

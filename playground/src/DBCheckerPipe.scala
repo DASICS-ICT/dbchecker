@@ -51,7 +51,7 @@ class DBCheckerPipeStage1 extends Module with DBCheckerConst { // readDBTE
   val dbte_refill_req_if = IO(Decoupled(new DBCheckerDBTEReq))
   val dbte_refill_rsp_if = IO(Flipped(Decoupled(new DBCheckerDBTERsp)))
 
-  val fsm_state = RegInit(pipeline_dbte_fetch_req.U(3.W))
+  val fsm_state = RegInit(DBCheckerFetchState.FETCH)
 
   val pipe_v_reg      = RegInit(false.B)
   val pipe_medium_reg = RegInit(0.U.asTypeOf(new DBCheckerPipeMedium))
@@ -77,93 +77,69 @@ class DBCheckerPipeStage1 extends Module with DBCheckerConst { // readDBTE
     dbte_refill_rsp: wait for refill rsp, then output dbte to the next pipeline and go to init state                            
   */
 
-  val addr_ptr = pipe_medium_reg.axi_a.addr.asTypeOf(new DBCheckerPtr)
-  val dbte_cache_index = addr_ptr.get_index_hi
+  val addr_ptr = Mux(in_pipe.fire, in_pipe.bits, pipe_medium_reg).axi_a.addr.asTypeOf(new DBCheckerPtr)
+
   val dbte_index = addr_ptr.get_index
+  val dbte_index_hi = addr_ptr.get_index_hi
   val refilled = RegInit(false.B)
-  val bypass   = Mux(in_pipe.fire, in_pipe.bits.bypass, pipe_medium_reg.bypass)
 
   dbte_mem_if.enable  := true.B
-  dbte_mem_if.address := dbte_cache_index
-  val cached_date = dbte_mem_if.data
+  dbte_mem_if.address := dbte_index_hi
+  
+  val cached_dbte = dbte_mem_if.data
   val refilled_dbte = RegInit(0.U(128.W))
   val refilled_valid = RegInit(false.B)
 
-  when(dbte_refill_rsp_if.fire) {
-    refilled_dbte := dbte_refill_rsp_if.bits.dbte
-    refilled_valid := dbte_refill_rsp_if.bits.v
-  }
-
+  dbte_refill_req_if.valid := fsm_state === DBCheckerFetchState.RREQ
   dbte_refill_req_if.bits.index := dbte_index
+  dbte_refill_rsp_if.ready := fsm_state === DBCheckerFetchState.RRSP
 
   switch(fsm_state) {
-    is(pipeline_dbte_fetch_req.U) {
-      when(pipe_v_reg) {
-        when(bypass) {
-          fsm_state := pipeline_dbte_output.U
-        }.elsewhen(dbte_v_bm(dbte_cache_index)) {
-          fsm_state := pipeline_dbte_fetch_rsp.U
+    is(DBCheckerFetchState.FETCH) {
+      when(pipe_v_reg && !pipe_medium_reg.bypass) {
+        when(dbte_v_bm(dbte_index_hi) && 
+             dbte_index === Cat(dbte_index_hi, cached_dbte.asTypeOf(new DBCheckerMtdt).index_offset)) {
+          fsm_state := DBCheckerFetchState.OUTPUT
         }.otherwise {
-          fsm_state := pipeline_dbte_refill_req.U
+          fsm_state := DBCheckerFetchState.RREQ
         }
-      }.otherwise {
-        fsm_state := pipeline_dbte_fetch_req.U
       }
     }
-    is(pipeline_dbte_fetch_rsp.U) {
-      when(dbte_index === Cat(dbte_cache_index, cached_date.asTypeOf(new DBCheckerMtdt).index_offset)) {
-        // metadata match, send to next pipe
-        fsm_state := pipeline_dbte_output.U
-      }.otherwise {
-        // not match, need refill
-        fsm_state         := pipeline_dbte_refill_req.U
-      }
-    }
-    is(pipeline_dbte_refill_req.U) {
+    is(DBCheckerFetchState.RREQ) {
       when(dbte_refill_req_if.fire) {
-        fsm_state := pipeline_dbte_refill_rsp.U
-      }.otherwise {
-        fsm_state := pipeline_dbte_refill_req.U
+        fsm_state := DBCheckerFetchState.RRSP
       }
     }
-    is(pipeline_dbte_refill_rsp.U) {
+    is(DBCheckerFetchState.RRSP) {
       when(dbte_refill_rsp_if.fire) {
-        fsm_state := pipeline_dbte_output.U
+        refilled_dbte := dbte_refill_rsp_if.bits.dbte
+        fsm_state := DBCheckerFetchState.OUTPUT
         refilled := true.B
-      }.otherwise {
-        fsm_state := pipeline_dbte_refill_rsp.U
       }
     }
-    is(pipeline_dbte_output.U) {
+    is(DBCheckerFetchState.OUTPUT) {
       when(out_pipe.fire) {
-        fsm_state := pipeline_dbte_fetch_req.U
+        fsm_state := DBCheckerFetchState.FETCH
         refilled := false.B
-      }.otherwise {
-        fsm_state := pipeline_dbte_output.U
       }
     }
   }
 
   in_pipe.ready := !pipe_v_reg || out_pipe.fire
 
-  out_pipe.valid := pipe_v_reg && (fsm_state === pipeline_dbte_output.U)
+  out_pipe.valid := pipe_v_reg && (fsm_state === DBCheckerFetchState.OUTPUT || pipe_medium_reg.bypass)
   out_pipe.bits := pipe_medium_reg
-  out_pipe.bits.dbte := Mux(refilled, refilled_dbte, cached_date)
+  out_pipe.bits.dbte := Mux(refilled, refilled_dbte, cached_dbte)
 
-  dbte_refill_req_if.valid := pipe_v_reg && (fsm_state === pipeline_dbte_refill_req.U)
-  dbte_refill_rsp_if.ready := pipe_v_reg && (fsm_state === pipeline_dbte_refill_rsp.U)
-
-  val target_addr = Mux(in_pipe.fire, in_pipe.bits.axi_a.addr, pipe_medium_reg.axi_a.addr)
-
-  val err_finv = !dbte_v_bm(dbte_cache_index) && !pipe_medium_reg.bypass && !refilled_valid
+  val err_finv = !dbte_v_bm(dbte_index_hi) && !pipe_medium_reg.bypass && !refilled_dbte.asTypeOf(new DBCheckerMtdt).v
   val err_info = Wire(new DBCheckerErrInfo)
-  err_info.err_mtdt_index := target_addr.asTypeOf(new DBCheckerPtr).get_index
+  err_info.err_mtdt_index := addr_ptr.get_index
   err_info.err_info       := 0.U // metadata invalid, no extra info
 
-  when(out_pipe.fire && err_finv) {
+  when(!pipe_medium_reg.err_v && err_finv) {
     out_pipe.bits.err_v        := err_finv
     out_pipe.bits.err_req.typ  := err_mtdt_finv
-    out_pipe.bits.err_req.addr := target_addr
+    out_pipe.bits.err_req.addr := addr_ptr.asUInt
     out_pipe.bits.err_req.info := err_info.asUInt
   }
 
