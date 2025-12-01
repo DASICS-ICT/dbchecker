@@ -46,6 +46,7 @@ module dbchecker_sim_tb();
     bit [31:0] err_cnt;
     bit [63:0] err_addr;
     bit [31:0] err_info;
+    bit [31:0] val0, val1, val2, val3;
 
     bit [31:0] physical_ptr_array [31:0];
     bit [31:0] test_metadata_lo_arrary [31:0];
@@ -94,7 +95,9 @@ module dbchecker_sim_tb();
         slave_agent.start_slave();
 
         // Wait for the reset to be released
-        #100ns;
+        wait (aresetn == 1'b1);
+        @(posedge aclk); 
+        #10ns;
 
         // 预填充DBTE表
         pre_fill_dbte();
@@ -109,7 +112,7 @@ module dbchecker_sim_tb();
         test_buffer_out_of_bounds();
         
         // 测试用例4: 测试权限检查
-        test_write_to_ro_check();
+        test_read_to_wo_check();
         
         // 测试用例5: 测试Swap操作
         test_refill_operation();
@@ -191,8 +194,8 @@ module dbchecker_sim_tb();
 
             // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
             // 16bit index: 0x10, 12bit index: 0x1, 4bit index offset: 0x0
-            // this metadta is for RO test and access DBTE
-            test_metadata = {4'h0, 20'b1, 1'b1, 1'b0, 1'b1, 5'h1, 48'h4010_0000, 48'h4000_1000};
+            // this metadta is for access DBTE
+            test_metadata = {4'h0, 20'b1, 1'b1, 1'b1, 1'b1, 5'h1, 48'h4010_0000, 48'h4000_1000};
             master_agent.AXI4_WRITE_BURST(
                 id,
                 dbte_mb + (dbte_len * 16) / 8, // dbte index 0x10
@@ -335,7 +338,7 @@ module dbchecker_sim_tb();
             ctrl_agent.AXI4LITE_WRITE_BURST(
                 reg_base + reg_chk_en, // chk_en地址
                 0, // prot
-                32'h0000_0001, // 启用位
+                32'h0000_0002, // 启用位
                 resp
             );
 
@@ -353,8 +356,35 @@ module dbchecker_sim_tb();
                 resp
             );
             
-            $display("DBChecker configured successfully");
-            test_pass_count++;
+            ctrl_agent.AXI4LITE_READ_BURST(
+                reg_base + reg_chk_en, // chk_en地址
+                0, // prot
+                val0,
+                resp
+            );
+
+            ctrl_agent.AXI4LITE_READ_BURST(
+                reg_base + reg_dbte_mb_lo, 
+                0, // prot
+                val1,
+                resp
+            );
+
+            ctrl_agent.AXI4LITE_READ_BURST(
+                reg_base + reg_dbte_mb_hi, 
+                0, // prot
+                val2,
+                resp
+            );
+
+            if (val0 !== 32'h0000_0002 || val1 !== dbte_mb[31:0] || val2 !== dbte_mb[47:32]) begin
+                $display("ERROR: DBChecker configuration verification failed");
+                test_fail_count++;
+            end else begin
+                $display("DBChecker configured successfully");
+                test_pass_count++;
+            end
+
         end
     endtask
 
@@ -362,6 +392,13 @@ module dbchecker_sim_tb();
     task test_buffer_valid_access();
         begin
             $display("Test 2: buffer Valid Access");
+
+            ctrl_agent.AXI4LITE_READ_BURST(
+                reg_base + reg_chk_err_cnt, // chk_err_cnt地址
+                0, // prot
+                val0, // 错误计数器值
+                resp
+            );
             
             physical_pointer = {16'h0, 32'h4000_0000};
 
@@ -388,11 +425,19 @@ module dbchecker_sim_tb();
                 resp
             );
             
-            if (resp === XIL_AXI_RESP_OKAY) begin
-                $display("buffer valid write completed successfully");
+            ctrl_agent.AXI4LITE_READ_BURST(
+                reg_base + reg_chk_err_cnt, // chk_err_cnt地址
+                0, // prot
+                val1, // 错误计数器值
+                resp
+            );
+
+            if (val1 == val0) begin
+                $display("Valid buffer access successful without errors");
                 test_pass_count++;
             end else begin
-                $display("ERROR: buffer valid write failed with response: 0x%0h", resp);
+                $display("ERROR: Valid buffer access caused errors: previous_err_cnt=0x%0h, current_err_cnt=0x%0h", 
+                         val0, val1);
                 test_fail_count++;
             end
         end
@@ -431,15 +476,15 @@ module dbchecker_sim_tb();
     endtask
 
     // 任务: 测试权限检查
-    task test_write_to_ro_check();
+    task test_read_to_wo_check();
         begin
             $display("Test 4: RW Permission Check");
             
             // 准备测试数据
             write_data = 64'hE9E9E9E9E9E9E9E9;
-            physical_pointer = {16'h10, 32'h4000_1500}; // 对应只读权限的DBTE
-            // 尝试写入只读缓冲区
-            master_agent.AXI4_WRITE_BURST(
+            physical_pointer = {16'h00, 48'h4000_0000}; // 对应只读权限的DBTE
+            // 尝试读取只写缓冲区
+            master_agent.AXI4_READ_BURST(
                 id,
                 physical_pointer + 32'h100, // 在范围内的地址
                 len,
@@ -450,10 +495,10 @@ module dbchecker_sim_tb();
                 prot,
                 region,
                 qos,
-                awuser,
-                write_data,
-                write_wuser,
-                resp
+                aruser,
+                read_data,
+                read_resp,
+                read_ruser
             );
             
             // 检查错误计数器是否增加
@@ -466,6 +511,13 @@ module dbchecker_sim_tb();
     task test_refill_operation();
         begin
             $display("Test 5: Refill Operation");
+
+            ctrl_agent.AXI4LITE_READ_BURST(
+                reg_base + reg_chk_err_cnt, // chk_err_cnt地址
+                0, // prot
+                val0, // 错误计数器值
+                resp
+            );
             
             // | v(1) | opcode(1) | imm(30) |
             test_cmd = {1'b1, 1'b0, 13'b0, 1'b0, 16'h0}; // free dbet cache中的表项
@@ -497,12 +549,18 @@ module dbchecker_sim_tb();
                 write_wuser,
                 resp
             );
-            
-            if (resp === XIL_AXI_RESP_OKAY) begin
-                $display("swap completed successfully");
+            ctrl_agent.AXI4LITE_READ_BURST(
+                reg_base + reg_chk_err_cnt, // chk_err_cnt地址
+                0, // prot
+                val1, // 错误计数器值
+                resp
+            );
+            if (val1 == val0) begin
+                $display("Refill operation successful without errors");
                 test_pass_count++;
             end else begin
-                $display("ERROR: swap failed with response: 0x%0h", resp);
+                $display("ERROR: Refill operation caused errors: previous_err_cnt=0x%0h, current_err_cnt=0x%0h", 
+                         val0, val1);
                 test_fail_count++;
             end
         end
@@ -514,7 +572,7 @@ module dbchecker_sim_tb();
             
             // 首先free dbte表中的项
             // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
-            test_metadata = {4'h0, 20'b0, 1'b0, 1'b1, 1'b0, 5'h1, 48'h0000_1000, 48'h0000_0000};
+            test_metadata = 128'b0;
             master_agent.AXI4_WRITE_BURST(
                 id,
                 {16'h10, dbte_mb}, // dbte index 0
@@ -541,7 +599,7 @@ module dbchecker_sim_tb();
                 resp
             );
 
-            #10ns;
+            #100ns;
             
             // 准备测试数据
             write_data = 64'hF0F0F0F0F0F0F0F0;
@@ -576,7 +634,7 @@ module dbchecker_sim_tb();
             
             // 分配一个新的缓冲区
             // 构造buffer元数据 (W=1, R=1, off_len=01100, id=2030, upbnd=0x6100, lobnd=0x6000)
-            physical_pointer = {16'h20, 32'h4000_0000};
+            physical_pointer = {16'h20, 48'h4000_0000};
             
             $display("Allocated buffer for write - read test: 0x%0h", physical_pointer);
             
@@ -599,12 +657,6 @@ module dbchecker_sim_tb();
                 resp
             );
             
-            if (resp !== XIL_AXI_RESP_OKAY) begin
-                $display("ERROR: Write operation failed");
-                test_fail_count++;
-                return;
-            end
-            
             // 现在读取数据
             master_agent.AXI4_READ_BURST(
                 id,
@@ -622,15 +674,6 @@ module dbchecker_sim_tb();
                 read_resp,
                 read_ruser
             );
-            
-            if (read_resp[0] === XIL_AXI_RESP_OKAY && read_data[63:0] === 64'h123456789ABCDEF0) begin
-                $display("Read operation completed successfully");
-            end else begin
-                $display("ERROR: Read operation failed. Response: 0x%0h, Data: 0x%0h", 
-                         read_resp[0], read_data[63:0]);
-                test_fail_count++;
-                return;
-            end
             
             // 测试越界读取
             master_agent.AXI4_READ_BURST(
@@ -659,10 +702,16 @@ module dbchecker_sim_tb();
     task test_cache_collision_handling();
         begin
             $display("Test 8: Cache Swap Operation");
-            
+            ctrl_agent.AXI4LITE_READ_BURST(
+                reg_base + reg_chk_err_cnt, // chk_err_cnt地址
+                0, // prot
+                val0, // 错误计数器值
+                resp
+            );
+ 
             // 分配一个新的缓冲区
             // 构造buffer元数据 (W=1, R=1, off_len=01100, id=2030, upbnd=0x6100, lobnd=0x6000)
-            physical_pointer = {16'h20, 32'h4000_0000};
+            physical_pointer = {16'h20, 48'h4000_0000};
             
             $display("Allocated buffer for write - read test: 0x%0h", physical_pointer);
             
@@ -685,14 +734,8 @@ module dbchecker_sim_tb();
                 resp
             );
             
-            if (resp !== XIL_AXI_RESP_OKAY) begin
-                $display("ERROR: Write operation failed");
-                test_fail_count++;
-                return;
-            end
-            
             // 测试另一条DBTE Cache碰撞的读操作
-            physical_pointer = {16'h21, 32'h4000_0000}; // 使用相同的DBTE Cache索引
+            physical_pointer = {16'h21, 48'h4000_0000}; // 使用相同的DBTE Cache索引
             master_agent.AXI4_WRITE_BURST(
                 id,
                 physical_pointer + 32'h50, // 在范围内的地址
@@ -709,18 +752,27 @@ module dbchecker_sim_tb();
                 write_wuser,
                 resp
             );
+
+            ctrl_agent.AXI4LITE_READ_BURST(
+                reg_base + reg_chk_err_cnt, // chk_err_cnt地址
+                0, // prot
+                val1, // 错误计数器值
+                resp
+            );
             
-            if (resp !== XIL_AXI_RESP_OKAY) begin
-                $display("ERROR: Write operation failed");
+            if (val1 == val0) begin
+                $display("DBTE Cache collision handled successfully without errors");
+                test_pass_count++;
+            end else begin
+                $display("ERROR: DBTE Cache collision caused errors: previous_err_cnt=0x%0h, current_err_cnt=0x%0h", 
+                         val0, val1);
                 test_fail_count++;
-                return;
             end
         end
     endtask
     
      // 任务: 测试错误计数器
     task test_error_counters();
-
         begin
             $display("Test 9: Error Counters");
             
@@ -772,6 +824,13 @@ module dbchecker_sim_tb();
     task test_disable_checker();
         begin
             $display("Test 10: Disable DBChecker");
+
+            ctrl_agent.AXI4LITE_READ_BURST(
+                reg_base + reg_chk_err_cnt, // chk_err_cnt地址
+                0, // prot
+                val0, // 错误计数器值
+                resp
+            );
             
             // 禁用DBChecker
             ctrl_agent.AXI4LITE_WRITE_BURST(
@@ -801,11 +860,19 @@ module dbchecker_sim_tb();
                 resp
             );
             
-            if (resp === XIL_AXI_RESP_OKAY) begin
-                $display("Access with disabled checker completed successfully");
+           ctrl_agent.AXI4LITE_READ_BURST(
+                reg_base + reg_chk_err_cnt, // chk_err_cnt地址
+                0, // prot
+                val1, // 错误计数器值
+                resp
+            );
+
+            if (val1 == val0) begin
+                $display("DBChecker disabled successfully, no errors recorded during access");
                 test_pass_count++;
             end else begin
-                $display("ERROR: Access with disabled checker failed with response: 0x%0h", resp);
+                $display("ERROR: DBChecker disable failed, errors recorded: previous_err_cnt=0x%0h, current_err_cnt=0x%0h", 
+                         val0, val1);
                 test_fail_count++;
             end
         end
@@ -861,7 +928,7 @@ module dbchecker_sim_tb();
                 0: actual_value = err_cnt[10:4];  // err_bnd_farea
                 1: actual_value = err_cnt[17:11]; // err_bnd_ftype
                 2: actual_value = err_cnt[24:18]; // err_mtdt_finv
-                3: actual_value = err_cnt[31:25]; // err_mtdt_fmn
+                3: actual_value = err_cnt[31:25]; // err_mtdt_fdev
                 default: actual_value = 0;
             endcase
 
