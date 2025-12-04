@@ -102,34 +102,37 @@ module dbchecker_sim_tb();
         // 预填充DBTE表
         pre_fill_dbte();
 
-        // 测试用例1: 配置DBChecker
+        // 测试用例: 配置DBChecker
         test_configure_checker();
  
-        // 测试用例2: 分配buffer并测试有效访问
+        // 测试用例: 分配buffer并测试有效访问
         test_buffer_valid_access();
         
-        // 测试用例3: 测试buffer越界访问
+        // 测试用例: 测试buffer越界访问
         test_buffer_out_of_bounds();
         
-        // 测试用例4: 测试权限检查
+        // 测试用例: 测试权限检查
         test_read_to_wo_check();
         
-        // 测试用例5: 测试Swap操作
+        // 测试用例: 测试Swap操作
         test_refill_operation();
 
-        // 测试用例6: 测试Free操作
+        // 测试用例: 测试Free操作
         test_free_operation();
+
+        // 测试用例：测试无效的free操作
+        test_free_invalid_entry();
         
-        // 测试用例7: 测试Write-Read操作
+        // 测试用例: 测试Write-Read操作
         test_rw_check();
         
-        // 测试用例8：测试DBTE Cache碰撞处理
+        // 测试用例：测试DBTE Cache碰撞处理
         test_cache_collision_handling();
         
-        // 测试用例9: 测试错误计数器
+        // 测试用例: 测试错误计数器
         test_error_counters();
         
-        // 测试用例10: 测试禁用DBChecker
+        // 测试用例: 测试禁用DBChecker
         test_disable_checker();
 
         // 完成测试
@@ -628,9 +631,60 @@ module dbchecker_sim_tb();
         end
     endtask
 
- task test_rw_check();
+    // 任务: 测试Free一个无效的条目
+    task test_free_invalid_entry();
+        bit [31:0] cmd_readback;
+        bit [15:0] invalid_index;
         begin
-            $display("Test 7: Write-Read Operation");
+            $display("Test 7: Free Invalid Metadata Entry (Deadlock Check)");
+            
+            // 1. 选择一个未在 pre_fill_dbte 中初始化的索引 (例如 0x0050)
+            // 此时硬件内部的 dbte_v_bitmap 对应位应为 0
+            invalid_index = 16'h0050;
+            
+            // 2. 构造 Free 命令
+            // 格式参考: | v(1) | opcode(1) | reserved(14) | index(16) |
+            // Opcode 0 = Free
+            test_cmd = {1'b1, 1'b0, 14'b0, invalid_index}; 
+
+            $display("Sending Free command for invalid index: 0x%0h", invalid_index);
+
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_chk_cmd, // chk_cmd地址
+                0, // prot
+                test_cmd,
+                resp
+            );
+
+            // 3. 等待足够的时钟周期让状态机处理
+            // 如果存在Bug，状态机会在这里卡住，cmd_reg.v 永远不会拉低
+            #200ns;
+
+            // 4. 回读命令寄存器
+            ctrl_agent.AXI4LITE_READ_BURST(
+                reg_base + reg_chk_cmd, 
+                0, // prot
+                cmd_readback,
+                resp
+            );
+
+            // 5. 验证结果
+            // Bit 31 是 Valid 位。如果它变成了 0，说明状态机正确处理了无效条目的Free请求（即什么都不做并结束命令）。
+            // 如果它还是 1，说明发生了死锁。
+            if (cmd_readback[31] == 1'b0) begin
+                $display("Success: Command register V-bit cleared. State machine handled invalid free correctly.");
+                test_pass_count++;
+            end else begin
+                $display("ERROR: Command register V-bit stuck at 1! Deadlock detected.");
+                $display("       Cmd Readback: 0x%0h", cmd_readback);
+                test_fail_count++;
+            end
+        end
+    endtask
+
+    task test_rw_check();
+        begin
+            $display("Test 8: Write-Read Operation");
             
             // 分配一个新的缓冲区
             // 构造buffer元数据 (W=1, R=1, off_len=01100, id=2030, upbnd=0x6100, lobnd=0x6000)
@@ -701,7 +755,7 @@ module dbchecker_sim_tb();
 
     task test_cache_collision_handling();
         begin
-            $display("Test 8: Cache Swap Operation");
+            $display("Test 9: Cache Swap Operation");
             ctrl_agent.AXI4LITE_READ_BURST(
                 reg_base + reg_chk_err_cnt, // chk_err_cnt地址
                 0, // prot
@@ -774,7 +828,7 @@ module dbchecker_sim_tb();
      // 任务: 测试错误计数器
     task test_error_counters();
         begin
-            $display("Test 9: Error Counters");
+            $display("Test A: Error Counters");
             
             // 读取错误计数器
             ctrl_agent.AXI4LITE_READ_BURST(
@@ -823,7 +877,7 @@ module dbchecker_sim_tb();
     // 任务: 测试禁用DBChecker
     task test_disable_checker();
         begin
-            $display("Test 10: Disable DBChecker");
+            $display("Test B: Disable DBChecker");
 
             ctrl_agent.AXI4LITE_READ_BURST(
                 reg_base + reg_chk_err_cnt, // chk_err_cnt地址

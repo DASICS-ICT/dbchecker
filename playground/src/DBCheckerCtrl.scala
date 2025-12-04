@@ -163,6 +163,10 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
             cmd_reg       := clr_cmd.asUInt // clear v
             // otherwise do nothing
           }
+        }.otherwise {
+          val clr_cmd = WireInit(cmd_reg.asTypeOf(new DBCheckerCommand))
+          clr_cmd.v := false.B
+          cmd_reg   := clr_cmd.asUInt // clear v
         }
       }
       is(cmd_op_clr_err) { // clear err counter
