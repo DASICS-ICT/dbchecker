@@ -9,15 +9,14 @@ module dbchecker_sim_tb();
     // DBChecker寄存器地址
     localparam reg_base = 32'h4000_0000;
     localparam reg_chk_en = 32'h0000_0000;        // reg 0
-    localparam reg_chk_cmd = 32'h0000_0004;       // reg 1
-    localparam reg_dbte_mb_lo = 32'h0000_0008;    // reg 2
-    localparam reg_dbte_mb_hi = 32'h0000_000C;    // reg 3
-    localparam reg_chk_err_addr_lo = 32'h0000_0010;       // reg 4
-    localparam reg_chk_err_addr_hi = 32'h0000_0014;      // reg 5
-    localparam reg_chk_err_info = 32'h0000_0018;      // reg 6
-    localparam reg_chk_err_cnt = 32'h0000_001C;       // reg 7
-    localparam dbte_mb = 48'h4000_2000;
-    localparam dbte_len = 128;
+    localparam reg_chk_mtdt_0 = 32'h0000_0004;
+    localparam reg_chk_mtdt_1 = 32'h0000_0008;
+    localparam reg_chk_mtdt_2 = 32'h0000_000C;
+    localparam reg_chk_cmd = 32'h0000_0010;       // reg 1
+    localparam reg_chk_err_addr_lo = 32'h0000_0014;       // reg 4
+    localparam reg_chk_err_addr_hi = 32'h0000_0018;      // reg 5
+    localparam reg_chk_err_info = 32'h0000_001C;      // reg 6
+    localparam reg_chk_err_cnt = 32'h0000_0020;       // reg 7
     
     // 现有声明保持不变
     reg aclk;
@@ -67,7 +66,7 @@ module dbchecker_sim_tb();
     bit [8*4096-1:0]            read_data;
     xil_axi_resp_t [255:0]      read_resp;
     xil_axi_data_beat [255:0]   read_ruser;
-    xil_axi_data_beat [255:0]   write_wuser = {256{0}};
+    xil_axi_data_beat [255:0]   write_wuser = {256{1'b0}};
     
     // 添加测试控制变量
     integer test_pass_count = 0;
@@ -99,9 +98,6 @@ module dbchecker_sim_tb();
         @(posedge aclk); 
         #10ns;
 
-        // 预填充DBTE表
-        pre_fill_dbte();
-
         // 测试用例: 配置DBChecker
         test_configure_checker();
  
@@ -113,9 +109,6 @@ module dbchecker_sim_tb();
         
         // 测试用例: 测试权限检查
         test_read_to_wo_check();
-        
-        // 测试用例: 测试Swap操作
-        test_refill_operation();
 
         // 测试用例: 测试Free操作
         test_free_operation();
@@ -125,9 +118,6 @@ module dbchecker_sim_tb();
         
         // 测试用例: 测试Write-Read操作
         test_rw_check();
-        
-        // 测试用例：测试DBTE Cache碰撞处理
-        test_cache_collision_handling();
         
         // 测试用例: 测试错误计数器
         test_error_counters();
@@ -147,192 +137,6 @@ module dbchecker_sim_tb();
         $finish;
     end
 
-    task pre_fill_dbte();
-        begin
-            $display("Pre-filling DBTE memory with test metadata");
-            // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
-            // 16bit index: 0x0, 12bit index: 0x0, 4bit index offset: 0x0
-            // this metadata is for write valid / write out of bound / swap and free test
-            test_metadata = {4'h0, 20'b0, 1'b1, 1'b1, 1'b0, 5'h1, 48'h4000_1000, 48'h4000_0000};
-            master_agent.AXI4_WRITE_BURST(
-                id,
-                dbte_mb, // dbte index 0x0
-                len,
-                size,
-                burst,
-                lock,
-                cache,
-                prot,
-                region,
-                qos,
-                awuser,
-                test_metadata,
-                write_wuser,
-                resp
-            );
-
-            master_agent.AXI4_READ_BURST(
-                id,
-                dbte_mb, // dbte index 0x0
-                len,
-                size,
-                burst,
-                lock,
-                cache,
-                prot,
-                region,
-                qos,
-                aruser,
-                read_data,
-                read_resp,
-                read_ruser
-            );
-
-            if (read_resp[0] === XIL_AXI_RESP_OKAY && read_data[127:0] === test_metadata[127:0]) begin
-                $display("Pre-fill [0] successful");
-            end else begin
-                $display("ERROR: Pre-fill [0] failed: test_metadata=0x%0h, read_data=0x%0h", 
-                    test_metadata[127:0], read_data[127:0]);
-            end
-
-            // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
-            // 16bit index: 0x10, 12bit index: 0x1, 4bit index offset: 0x0
-            // this metadta is for access DBTE
-            test_metadata = {4'h0, 20'b1, 1'b1, 1'b1, 1'b1, 5'h1, 48'h4010_0000, 48'h4000_1000};
-            master_agent.AXI4_WRITE_BURST(
-                id,
-                dbte_mb + (dbte_len * 16) / 8, // dbte index 0x10
-                len,
-                size,
-                burst,
-                lock,
-                cache,
-                prot,
-                region,
-                qos,
-                awuser,
-                test_metadata,
-                write_wuser,
-                resp
-            );
-
-            master_agent.AXI4_READ_BURST(
-                id,
-                dbte_mb + (dbte_len * 16) / 8, // dbte index 0x10
-                len,
-                size,
-                burst,
-                lock,
-                cache,
-                prot,
-                region,
-                qos,
-                aruser,
-                read_data,
-                read_resp,
-                read_ruser
-            );
-
-            if (read_resp[0] === XIL_AXI_RESP_OKAY && read_data[127:0] === test_metadata[127:0]) begin
-                $display("Pre-fill [1] successful");
-            end else begin
-                $display("ERROR: Pre-fill [1] failed: test_metadata=0x%0h, read_data=0x%0h", 
-                    test_metadata[127:0], read_data[127:0]);
-            end
-
-            // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
-            // 16bit index: 0x20, 12bit index: 0x2, 4bit index offset: 0x0
-            // this metadata is for Rw test
-            test_metadata = {4'h0, 20'h2, 1'b1, 1'b1, 1'b1, 5'h1, 48'h4000_1000, 48'h4000_0000};
-            master_agent.AXI4_WRITE_BURST(
-                id,
-                dbte_mb + (dbte_len * 32) / 8, // dbte index 2
-                len,
-                size,
-                burst,
-                lock,
-                cache,
-                prot,
-                region,
-                qos,
-                awuser,
-                test_metadata,
-                write_wuser,
-                resp
-            );
-
-            master_agent.AXI4_READ_BURST(
-                id,
-                dbte_mb + (dbte_len * 32) / 8, // dbte index 2
-                len,
-                size,
-                burst,
-                lock,
-                cache,
-                prot,
-                region,
-                qos,
-                aruser,
-                read_data,
-                read_resp,
-                read_ruser
-            );
-
-            if (read_resp[0] === XIL_AXI_RESP_OKAY && read_data[127:0] === test_metadata[127:0]) begin
-                $display("Pre-fill [2] successful");
-            end else begin
-                $display("ERROR: Pre-fill [2] failed: test_metadata=0x%0h, read_data=0x%0h", 
-                    test_metadata[127:0], read_data[127:0]);
-            end
-
-            // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
-            // 16bit index: 0x21, 12bit index: 0x2, 4bit index offset: 0x1
-            // this metadata is for dbte cache collision
-            test_metadata = {4'h1, 20'h2, 1'b1, 1'b1, 1'b1, 5'h1, 48'h4000_1000, 48'h4000_0000};
-            master_agent.AXI4_WRITE_BURST(
-                id,
-                dbte_mb + (dbte_len * 33) / 8, // dbte index 2
-                len,
-                size,
-                burst,
-                lock,
-                cache,
-                prot,
-                region,
-                qos,
-                awuser,
-                test_metadata,
-                write_wuser,
-                resp
-            );
-
-            master_agent.AXI4_READ_BURST(
-                id,
-                dbte_mb + (dbte_len * 33) / 8, // dbte index 2
-                len,
-                size,
-                burst,
-                lock,
-                cache,
-                prot,
-                region,
-                qos,
-                aruser,
-                read_data,
-                read_resp,
-                read_ruser
-            );
-
-            if (read_resp[0] === XIL_AXI_RESP_OKAY && read_data[127:0] === test_metadata[127:0]) begin
-                $display("Pre-fill [3] successful");
-            end else begin
-                $display("ERROR: Pre-fill [3] failed: test_metadata=0x%0h, read_data=0x%0h", 
-                    test_metadata[127:0], read_data[127:0]);
-            end
-
-        end
-    endtask
-
     // 任务: 配置DBChecker
     task test_configure_checker();
         begin
@@ -341,21 +145,7 @@ module dbchecker_sim_tb();
             ctrl_agent.AXI4LITE_WRITE_BURST(
                 reg_base + reg_chk_en, // chk_en地址
                 0, // prot
-                32'h0000_0002, // 启用位
-                resp
-            );
-
-            ctrl_agent.AXI4LITE_WRITE_BURST(
-                reg_base + reg_dbte_mb_lo, 
-                0, // prot
-                dbte_mb[31:0], //
-                resp
-            );
-
-            ctrl_agent.AXI4LITE_WRITE_BURST(
-                reg_base + reg_dbte_mb_hi, 
-                0, // prot
-                dbte_mb[47:32], //
+                32'h0000_0001, // 启用位
                 resp
             );
             
@@ -366,21 +156,7 @@ module dbchecker_sim_tb();
                 resp
             );
 
-            ctrl_agent.AXI4LITE_READ_BURST(
-                reg_base + reg_dbte_mb_lo, 
-                0, // prot
-                val1,
-                resp
-            );
-
-            ctrl_agent.AXI4LITE_READ_BURST(
-                reg_base + reg_dbte_mb_hi, 
-                0, // prot
-                val2,
-                resp
-            );
-
-            if (val0 !== 32'h0000_0002 || val1 !== dbte_mb[31:0] || val2 !== dbte_mb[47:32]) begin
+            if (val0 !== 32'h0000_0001) begin
                 $display("ERROR: DBChecker configuration verification failed");
                 test_fail_count++;
             end else begin
@@ -403,7 +179,9 @@ module dbchecker_sim_tb();
                 resp
             );
             
-            physical_pointer = {16'h0, 32'h4000_0000};
+            alloc_mtdt(1'b1, 1'b0, 12'h111, 48'h4000_0000, 48'h4000_1000);
+            physical_pointer = {16'h111, 48'h4000_0000};
+            
 
             $display("Allocated buffer physical pointer: 0x%0h", physical_pointer);
             
@@ -485,7 +263,6 @@ module dbchecker_sim_tb();
             
             // 准备测试数据
             write_data = 64'hE9E9E9E9E9E9E9E9;
-            physical_pointer = {16'h00, 48'h4000_0000}; // 对应只读权限的DBTE
             // 尝试读取只写缓冲区
             master_agent.AXI4_READ_BURST(
                 id,
@@ -510,90 +287,11 @@ module dbchecker_sim_tb();
         end
     endtask
 
-     // 任务: 测试Refill操作
-    task test_refill_operation();
-        begin
-            $display("Test 5: Refill Operation");
-
-            ctrl_agent.AXI4LITE_READ_BURST(
-                reg_base + reg_chk_err_cnt, // chk_err_cnt地址
-                0, // prot
-                val0, // 错误计数器值
-                resp
-            );
-            
-            // | v(1) | opcode(1) | imm(30) |
-            test_cmd = {1'b1, 1'b0, 13'b0, 1'b0, 16'h0}; // free dbet cache中的表项
-
-            ctrl_agent.AXI4LITE_WRITE_BURST(
-                reg_base + reg_chk_cmd, // chk_cmd地址
-                0, // prot
-                test_cmd,
-                resp
-            );
-
-            // 准备测试数据
-            write_data = 64'hF0F0F0F0F0F0F0F0;
-            physical_pointer = {16'h0, 32'h4000_0000};
-            // 尝试访问已释放的缓冲区
-            master_agent.AXI4_WRITE_BURST(
-                id,
-                physical_pointer + 32'h100, // 在范围内的地址
-                len,
-                size,
-                burst,
-                lock,
-                cache,
-                prot,
-                region,
-                qos,
-                awuser,
-                write_data,
-                write_wuser,
-                resp
-            );
-            ctrl_agent.AXI4LITE_READ_BURST(
-                reg_base + reg_chk_err_cnt, // chk_err_cnt地址
-                0, // prot
-                val1, // 错误计数器值
-                resp
-            );
-            if (val1 == val0) begin
-                $display("Refill operation successful without errors");
-                test_pass_count++;
-            end else begin
-                $display("ERROR: Refill operation caused errors: previous_err_cnt=0x%0h, current_err_cnt=0x%0h", 
-                         val0, val1);
-                test_fail_count++;
-            end
-        end
-    endtask
-
     task test_free_operation();
         begin
             $display("Test 6: Free Operation");
-            
-            // 首先free dbte表中的项
-            // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
-            test_metadata = 128'b0;
-            master_agent.AXI4_WRITE_BURST(
-                id,
-                {16'h10, dbte_mb}, // dbte index 0
-                len,
-                size,
-                burst,
-                lock,
-                cache,
-                prot,
-                region,
-                qos,
-                awuser,
-                test_metadata,
-                write_wuser,
-                resp
-            );
 
-            test_cmd = {1'b1, 1'b0, 13'b0, 1'b0, 16'h0}; // free dbet cache中的表项
+            test_cmd = {1'b1, 2'b0, 1'b0, 15'b0, 1'b0, 12'h111}; // free dbet cache中的表项
 
             ctrl_agent.AXI4LITE_WRITE_BURST(
                 reg_base + reg_chk_cmd, // chk_cmd地址
@@ -606,7 +304,7 @@ module dbchecker_sim_tb();
             
             // 准备测试数据
             write_data = 64'hF0F0F0F0F0F0F0F0;
-            physical_pointer = {16'h0, 32'h4000_0000};
+            physical_pointer = {16'h111, 32'h4000_0000};
             // 尝试访问已释放的缓冲区
             master_agent.AXI4_WRITE_BURST(
                 id,
@@ -640,12 +338,12 @@ module dbchecker_sim_tb();
             
             // 1. 选择一个未在 pre_fill_dbte 中初始化的索引 (例如 0x0050)
             // 此时硬件内部的 dbte_v_bitmap 对应位应为 0
-            invalid_index = 16'h0050;
+            invalid_index = 12'h50;
             
             // 2. 构造 Free 命令
             // 格式参考: | v(1) | opcode(1) | reserved(14) | index(16) |
             // Opcode 0 = Free
-            test_cmd = {1'b1, 1'b0, 14'b0, invalid_index}; 
+            test_cmd = {1'b1, 2'b0, 1'b1, 15'b0, 1'b0, invalid_index}; 
 
             $display("Sending Free command for invalid index: 0x%0h", invalid_index);
 
@@ -671,7 +369,7 @@ module dbchecker_sim_tb();
             // 5. 验证结果
             // Bit 31 是 Valid 位。如果它变成了 0，说明状态机正确处理了无效条目的Free请求（即什么都不做并结束命令）。
             // 如果它还是 1，说明发生了死锁。
-            if (cmd_readback[31] == 1'b0) begin
+            if (cmd_readback[31] == 1'b0 || cmd_readback[28] == 1'b0) begin
                 $display("Success: Command register V-bit cleared. State machine handled invalid free correctly.");
                 test_pass_count++;
             end else begin
@@ -688,7 +386,8 @@ module dbchecker_sim_tb();
             
             // 分配一个新的缓冲区
             // 构造buffer元数据 (W=1, R=1, off_len=01100, id=2030, upbnd=0x6100, lobnd=0x6000)
-            physical_pointer = {16'h20, 48'h4000_0000};
+            alloc_mtdt(1'b1, 1'b1, 12'h222, 48'h4000_0000, 48'h4000_1000);
+            physical_pointer = {16'h222, 48'h4000_0000};
             
             $display("Allocated buffer for write - read test: 0x%0h", physical_pointer);
             
@@ -752,78 +451,6 @@ module dbchecker_sim_tb();
             check_error_counter(0, 2);
         end
     endtask
-
-    task test_cache_collision_handling();
-        begin
-            $display("Test 9: Cache Swap Operation");
-            ctrl_agent.AXI4LITE_READ_BURST(
-                reg_base + reg_chk_err_cnt, // chk_err_cnt地址
-                0, // prot
-                val0, // 错误计数器值
-                resp
-            );
- 
-            // 分配一个新的缓冲区
-            // 构造buffer元数据 (W=1, R=1, off_len=01100, id=2030, upbnd=0x6100, lobnd=0x6000)
-            physical_pointer = {16'h20, 48'h4000_0000};
-            
-            $display("Allocated buffer for write - read test: 0x%0h", physical_pointer);
-            
-            // 首先写入一些数据
-            write_data = 64'h123456789ABCDEF0;
-            master_agent.AXI4_WRITE_BURST(
-                id,
-                physical_pointer + 32'h50, // 在范围内的地址
-                len,
-                size,
-                burst,
-                lock,
-                cache,
-                prot,
-                region,
-                qos,
-                awuser,
-                write_data,
-                write_wuser,
-                resp
-            );
-            
-            // 测试另一条DBTE Cache碰撞的读操作
-            physical_pointer = {16'h21, 48'h4000_0000}; // 使用相同的DBTE Cache索引
-            master_agent.AXI4_WRITE_BURST(
-                id,
-                physical_pointer + 32'h50, // 在范围内的地址
-                len,
-                size,
-                burst,
-                lock,
-                cache,
-                prot,
-                region,
-                qos,
-                awuser,
-                write_data,
-                write_wuser,
-                resp
-            );
-
-            ctrl_agent.AXI4LITE_READ_BURST(
-                reg_base + reg_chk_err_cnt, // chk_err_cnt地址
-                0, // prot
-                val1, // 错误计数器值
-                resp
-            );
-            
-            if (val1 == val0) begin
-                $display("DBTE Cache collision handled successfully without errors");
-                test_pass_count++;
-            end else begin
-                $display("ERROR: DBTE Cache collision caused errors: previous_err_cnt=0x%0h, current_err_cnt=0x%0h", 
-                         val0, val1);
-                test_fail_count++;
-            end
-        end
-    endtask
     
      // 任务: 测试错误计数器
     task test_error_counters();
@@ -846,7 +473,7 @@ module dbchecker_sim_tb();
             $display("Latest error: 0x%0h", err_cnt[3:0]);
             
             // 清除错误计数器
-            test_cmd = {1'b1, 1'b1, 30'b0}; // clr_err命令
+            test_cmd = {1'b1, 2'b1, 29'b0}; // clr_err命令
             ctrl_agent.AXI4LITE_WRITE_BURST(
                 reg_base + reg_chk_cmd, // chk_cmd_hi
                 0, // prot
@@ -997,6 +624,56 @@ module dbchecker_sim_tb();
                          counter_index, actual_value, expected_value);
                 test_fail_count++;
             end
+        end
+    endtask
+
+    task automatic alloc_mtdt(bit w, bit r, bit [11:0] index, bit [47:0] lo_bnd, bit [47:0] hi_bnd);
+        begin
+            bit [31:0] write_mtdt_0 = lo_bnd[31:0];
+            bit [31:0] write_mtdt_1 = {hi_bnd[15:0], lo_bnd[47:32]};
+            bit [31:0] write_mtdt_2 = hi_bnd[47:16];
+            bit [31:0] alloc_cmd = {1'b1, 2'b10, 1'b0, 14'b0, w, r, index};
+
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_chk_mtdt_0, // chk_en地址
+                0, // prot
+                write_mtdt_0, // 启用位
+                resp
+            );
+
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_chk_mtdt_1, // chk_en地址
+                0, // prot
+                write_mtdt_1, // 启用位
+                resp
+            );
+
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_chk_mtdt_2, // chk_en地址
+                0, // prot
+                write_mtdt_2, // 启用位
+                resp
+            );
+
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_chk_cmd, // chk_en地址
+                0, // prot
+                alloc_cmd, // 启用位
+                resp
+            );
+
+            #50ns;
+            ctrl_agent.AXI4LITE_READ_BURST(
+                reg_base + reg_chk_cmd,
+                0, // prot
+                val3,
+                resp
+            );
+
+            if (val3[28]) begin
+                $display("ERROR: Allocation failed");
+            end
+
         end
     endtask
 

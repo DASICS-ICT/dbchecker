@@ -85,7 +85,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
         val wmask = Cat((0 until 4).reverse.map(i => Fill(8, writeStrbReg(i))))
         when((index === chk_cmd.U && !regFile(index).asTypeOf(new DBCheckerCommand).v) || 
               index === chk_en.U || 
-              index === chk_mtdt_0.U || index === 1.U || index === chk_mtdt_2.U)
+              index === chk_mtdt_0.U || index === chk_mtdt_1.U || index === chk_mtdt_2.U)
         {
           // write success
           regFile(index) := (regFile(index) & ~wmask) | (writeDataReg & wmask)
