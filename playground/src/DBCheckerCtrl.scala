@@ -15,9 +15,6 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   val dbte_sram_r  = IO(Flipped(new MemoryReadPort(UInt(128.W), log2Up(dbte_num))))
   val err_req_r    = IO(Flipped(Decoupled(new DBCheckerErrReq)))
   val err_req_w    = IO(Flipped(Decoupled(new DBCheckerErrReq)))
-  val refill_dbte_req_if = IO(Flipped(Decoupled(new DBCheckerDBTEReq)))
-  val refill_dbte_rsp_if = IO(Decoupled(new DBCheckerDBTERsp))
-  val m_axi_dbte   = IO(new AxiMaster(48, 128))
 
   val debug_if = IO(Output(UInt(128.W)))
 
@@ -87,7 +84,8 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
         // write logic
         val wmask = Cat((0 until 4).reverse.map(i => Fill(8, writeStrbReg(i))))
         when((index === chk_cmd.U && !regFile(index).asTypeOf(new DBCheckerCommand).v) || 
-              index === chk_en.U || index === chk_dbte_mb_hi.U || index === chk_dbte_mb_lo.U)
+              index === chk_en.U || 
+              index === chk_mtdt_0.U || index === 1.U || index === chk_mtdt_2.U)
         {
           // write success
           regFile(index) := (regFile(index) & ~wmask) | (writeDataReg & wmask)
@@ -131,37 +129,33 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   val err_info_reg       = regFile(chk_err_info)
   val err_addr_lo_reg    = regFile(chk_err_addr_lo)
   val err_addr_hi_reg    = regFile(chk_err_addr_hi)
-
-  val is_freeing = cmd_reg_struct.v && cmd_reg_struct.op === cmd_op_free
+  val mtdt_0_reg         = regFile(chk_mtdt_0)
+  val mtdt_1_reg         = regFile(chk_mtdt_1)
+  val mtdt_2_reg         = regFile(chk_mtdt_2)
 
   when(cmd_reg_struct.v) { // command is valid
     switch(cmd_reg_struct.op) {
       is(cmd_op_free) { // free
         // Free the DBTE entry
         val clear_all  = cmd_reg_struct.imm(16)
-        val dbte_index_hi = cmd_reg_struct.get_index_hi
+        val dbte_index = cmd_reg_struct.get_index
         when (clear_all) {
           dbte_v_bitmap := 0.U
           val clr_cmd = WireInit(cmd_reg.asTypeOf(new DBCheckerCommand))
           clr_cmd.v     := false.B
           cmd_reg       := clr_cmd.asUInt // clear v
         }
-        .elsewhen(dbte_v_bitmap(dbte_index_hi)){
+        .elsewhen(dbte_v_bitmap(dbte_index)){
           when(!free_sram_wait) {
-            dbte_sram_r.address := dbte_index_hi
+            dbte_sram_r.address := dbte_index
             dbte_sram_r.enable  := true.B
             free_sram_wait      := true.B
           }.otherwise {
             free_sram_wait := false.B
-            val index_offset_in_cache = dbte_sram_r.data.asTypeOf(new DBCheckerMtdt).index_offset
-            when(index_offset_in_cache === cmd_reg_struct.get_index_lo) {
-              // the entry to be freed matches the cached one
-              dbte_v_bitmap := dbte_v_bitmap & ~(1.U << dbte_index_hi)
-            }
+            dbte_v_bitmap := dbte_v_bitmap & ~(1.U << dbte_index)
             val clr_cmd = WireInit(cmd_reg.asTypeOf(new DBCheckerCommand))
             clr_cmd.v     := false.B
             cmd_reg       := clr_cmd.asUInt // clear v
-            // otherwise do nothing
           }
         }.otherwise {
           val clr_cmd = WireInit(cmd_reg.asTypeOf(new DBCheckerCommand))
@@ -177,6 +171,26 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
           err_info_reg    := 0.U
           err_addr_hi_reg := 0.U
           err_addr_lo_reg := 0.U
+      }
+      is(cmd_op_alloc) { // alloc
+        // Allocate a DBTE entry
+        val alloc_index = cmd_reg_struct.get_index
+        val mtdt = Cat(cmd_reg, mtdt_2_reg, mtdt_1_reg, mtdt_0_reg)
+        when(!dbte_v_bitmap(alloc_index)) {
+          dbte_v_bitmap := dbte_v_bitmap | (1.U << alloc_index)
+          dbte_sram_w.address := alloc_index
+          dbte_sram_w.enable  := true.B
+          dbte_sram_w.data    := mtdt
+          val clr_cmd = WireInit(cmd_reg.asTypeOf(new DBCheckerCommand))
+          clr_cmd.v := false.B
+          clr_cmd.status := false.B
+          cmd_reg   := clr_cmd.asUInt // clear v
+        }.otherwise {
+          val clr_cmd = WireInit(cmd_reg.asTypeOf(new DBCheckerCommand))
+          clr_cmd.v := false.B
+          clr_cmd.status := true.B
+          cmd_reg   := clr_cmd.asUInt // clear v
+        }
       }
     }
   }
@@ -205,96 +219,6 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   }
   err_req_r.ready := cnt_enable
   err_req_w.ready := cnt_enable
-
-  // DBTE refill handler
-  val refill_state = RegInit(DBCheckerRefillState.AR)
-  val refill_index_reg = RegInit(0.U(16.W))
-  val refill_data_reg  = RegInit(0.U(128.W))
-  val refill_index_reg_hi = refill_index_reg(15, 16 - log2Up(dbte_num))
-  val dbte_base = Cat(regFile(chk_dbte_mb_hi), regFile(chk_dbte_mb_lo))
-  val index_collision = refill_index_reg === cmd_reg_struct.get_index
-
-  // aw / w / b are not used
-  m_axi_dbte.aw.valid := false.B
-  m_axi_dbte.aw.bits  := 0.U.asTypeOf(m_axi_dbte.aw.bits)
-  m_axi_dbte.w.valid := false.B
-  m_axi_dbte.w.bits  := 0.U.asTypeOf(m_axi_dbte.w.bits)
-  m_axi_dbte.b.ready := false.B 
-
-  // ar / r are used to read DBTE entries from memory
-  // bits are preset to values
-  m_axi_dbte.ar.bits       := 0.U.asTypeOf(m_axi_dbte.ar.bits)
-  m_axi_dbte.ar.bits.addr  := dbte_base + (refill_dbte_req_if.bits.index << 4) // DBTE entries addr from memory
-  m_axi_dbte.ar.bits.len   := 0.U
-  m_axi_dbte.ar.bits.size  := 4.U // 16 bytes
-  m_axi_dbte.ar.bits.burst := 1.U // INCR
-
-  // valid / ready are preset to false
-  m_axi_dbte.ar.valid      := false.B
-  m_axi_dbte.r.ready       := false.B
-
-  refill_dbte_req_if.ready := false.B
-  refill_dbte_rsp_if.valid := false.B
-  refill_dbte_rsp_if.bits.dbte := 0.U
-
-  switch(refill_state) {
-    is(DBCheckerRefillState.AR) {
-      m_axi_dbte.ar.valid := refill_dbte_req_if.valid
-      refill_dbte_req_if.ready := m_axi_dbte.ar.ready
-      when(m_axi_dbte.ar.fire) {
-        refill_index_reg := refill_dbte_req_if.bits.index
-        refill_state := DBCheckerRefillState.R
-      }
-    }
-    is(DBCheckerRefillState.R) {
-      m_axi_dbte.r.ready := true.B
-      when(m_axi_dbte.r.fire) {
-        // save data to keep good timing
-        refill_data_reg   := m_axi_dbte.r.bits.data
-        refill_state      := DBCheckerRefillState.WB
-      }
-    }
-    is(DBCheckerRefillState.WB) {
-      val rb_mtdt = refill_data_reg.asTypeOf(new DBCheckerMtdt)
-      when (rb_mtdt.v) {
-        // write back to SRAM and set bitmap
-        when(is_freeing) {
-          // do not write back when freeing
-          // if the index is euqal between the one being freed and refilled, it is a collision
-          // in this case, we need to clear the valid bit
-          when(index_collision) {
-            val invalid_mtdt = WireInit(rb_mtdt)
-            invalid_mtdt.v  := false.B
-            refill_dbte_rsp_if.valid := true.B
-            refill_dbte_rsp_if.bits.dbte := invalid_mtdt.asUInt
-            when(refill_dbte_rsp_if.ready) {
-              m_axi_dbte.r.ready := true.B
-              refill_state := DBCheckerRefillState.AR
-            }
-          }
-          // otherwise wait until freeing is done
-        }.otherwise {
-          dbte_sram_w.address := refill_index_reg_hi
-          dbte_sram_w.data    := rb_mtdt.asUInt
-          dbte_sram_w.enable  := true.B
-          dbte_v_bitmap       := dbte_v_bitmap | (1.U << refill_index_reg_hi)
-          refill_dbte_rsp_if.valid := true.B
-          refill_dbte_rsp_if.bits.dbte := rb_mtdt.asUInt
-          when(refill_dbte_rsp_if.ready) {
-            m_axi_dbte.r.ready := true.B
-            refill_state := DBCheckerRefillState.AR
-          }
-        }
-      }.otherwise{
-        refill_dbte_rsp_if.valid := true.B
-        refill_dbte_rsp_if.bits.dbte := rb_mtdt.asUInt
-        when(refill_dbte_rsp_if.ready) {
-          m_axi_dbte.r.ready := true.B
-          refill_state := DBCheckerRefillState.AR
-        }
-      }
-    }
-  }
 
   debug_if := Cat(cmd_reg,err_info_reg,err_addr_hi_reg,err_addr_lo_reg) // reserved
 }

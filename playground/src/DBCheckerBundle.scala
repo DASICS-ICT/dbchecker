@@ -4,37 +4,41 @@ import chisel3._
 import chisel3.util._
 import axi._
 trait DBCheckerConst {
-  val RegNum    = 8
+  val RegNum    = 9
   val dbte_num  = 4096
 
   // reg index (actual addr is 4 byte aligned, r/w lo-hi)
   // checker enable register  (0x0, RW) : checker enable / disable register
   val chk_en          = 0x0 // 0x00
 
-  // checker command register (0x1, RW) : used to free metadata / clr error cnt register
-  val chk_cmd         = 0x1 // 0x04
+  // metadata register 0 (0x1, RW) for | bound_lo(31,0) |
+  val chk_mtdt_0      = 0x1 // 0x04
 
-  // dbte table memory base lo addr (0x2, RW): full dbte table place in memory low 32 bits
-  val chk_dbte_mb_lo  = 0x2 // 0x08
+  // metadata register 1 (0x2, RW) for | bound_hi(15,0) | bound_lo(47,32) |
+  val chk_mtdt_1      = 0x2 // 0x08
 
-  // dbte table memory base hi addr (0x3, RW): full dbte table place in memory high 32 bits
-  val chk_dbte_mb_hi  = 0x3 // 0x0C
+  // metadata register 2 (0x3, RW) for | bnd_hi(47,32) |
+  val chk_mtdt_2      = 0x3 // 0x0C
+
+  // checker command register (0x4, RW) : used to free metadata / clr error cnt register
+  val chk_cmd         = 0x4 // 0x10
   
-  // checker error addr lo register (0x4, RO) : latest error access addr low 32 bits
-  val chk_err_addr_lo = 0x4 // 0x10
+  // checker error addr lo register (0x5, RO) : latest error access addr low 32 bits
+  val chk_err_addr_lo = 0x5 // 0x14
 
-  // checker error addr hi register (0x5, RO) : latest error access addr high 32 bits
-  val chk_err_addr_hi = 0x5 // 0x14
+  // checker error addr hi register (0x6, RO) : latest error access addr high 32 bits
+  val chk_err_addr_hi = 0x6 // 0x18
 
-  // checker error info register (0x6, RO) : latest error info
-  val chk_err_info    = 0x6 // 0x18
+  // checker error info register (0x7, RO) : latest error info
+  val chk_err_info    = 0x7 // 0x1C
 
-  // checker error counter register (0x7, RO)
-  val chk_err_cnt     = 0x7 // 0x1C
+  // checker error counter register (0x8, RO)
+  val chk_err_cnt     = 0x8 // 0x20
 
 
-  def cmd_op_free    = 0.U(1.W)
-  def cmd_op_clr_err = 1.U(1.W)
+  def cmd_op_free    = 0.U(2.W)
+  def cmd_op_clr_err = 1.U(2.W)
+  def cmd_op_alloc   = 2.U(2.W)
 
   def err_bnd_farea = 0.U(2.W)
   def err_bnd_ftype = 1.U(2.W)
@@ -43,15 +47,11 @@ trait DBCheckerConst {
 }
 
 class DBCheckerEnCtl extends Bundle with DBCheckerConst{
-  val en_dev_bm = UInt(32.W) // enable device ID bitmap
+  val rsvd = UInt(31.W) // enable device ID bitmap
+  val func_en = Bool()
 }
 class DBCheckerMtdt extends Bundle with DBCheckerConst {
-  val index_offset = UInt((16 - log2Up(dbte_num)).W)
-  val reserved     = UInt(( 8 + log2Up(dbte_num)).W)
-  val v            = Bool()
-  val w            = Bool()
-  val r            = Bool()
-  val dev_id       = UInt(5.W)
+  val cmd          = new DBCheckerCommand
   val bnd_hi       = UInt(48.W)
   val bnd_lo       = UInt(48.W)
 }
@@ -81,29 +81,35 @@ class DBCheckerErrReq extends Bundle {
 
 class DBCheckerCommand extends Bundle with DBCheckerConst{
   val v      = Bool()
-  val op     = UInt(1.W)
-  val imm    = UInt(30.W)
+  val op     = UInt(2.W)
+  val status = Bool()
+  val imm    = UInt(28.W)
 
-// used for free cmd
-  def get_index_lo: UInt = {
-    this.imm(15 - log2Up(dbte_num),0)
+  def get_index : UInt = {
+    this.imm(11, 0)
   }
-  def get_index_hi: UInt = {
-    this.imm(15, 16 - log2Up(dbte_num))
+
+  // for free cmd
+  def get_clr : Bool = {
+    this.imm(12)
   }
-  def get_index: UInt = {
-    this.imm(15, 0)
+
+  // for alloc cmd
+  def get_r : Bool = {
+    this.imm(12)
+  }
+
+  def get_w : Bool = {
+    this.imm(13)
   }
 }
 
 class DBCheckerPtr extends Bundle with DBCheckerConst {
   val dbte_index   = UInt(16.W)
   val access_addr = UInt(48.W)
-  def get_index_hi: UInt = {
-    this.dbte_index(15, 16 - log2Up(dbte_num))
-  }
+
   def get_index: UInt = {
-    this.dbte_index
+    this.dbte_index(log2Up(dbte_num) - 1, 0)
   }
 }
 
@@ -117,16 +123,6 @@ class DBCheckerPipeMedium extends Bundle with DBCheckerConst {
   val err_req    = new DBCheckerErrReq
 }
 
-class DBCheckerDBTEReq extends Bundle with DBCheckerConst {
-  val index     = UInt(16.W)
-}
-
-class DBCheckerDBTERsp extends Bundle with DBCheckerConst {
-  val dbte = UInt(128.W)
-}
 object DBCheckerFetchState extends ChiselEnum {
   val RREQ, RRSP = Value
-}
-object DBCheckerRefillState extends ChiselEnum {
-  val AR, R, WB = Value
 }

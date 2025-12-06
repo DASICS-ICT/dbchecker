@@ -26,7 +26,7 @@ class DBChecker extends Module with DBCheckerConst {
   dbte_mem.writePorts(0) <> ctrl.dbte_sram_w
   dbte_mem.readPorts(0) <> ctrl.dbte_sram_r
 
-  ctrl.m_axi_dbte <> m_axi_dbte
+  m_axi_dbte <> DontCare 
 
   // ring buffer
   // val rx_rb = Module(new AXIRingBuffer(32, 128, 16))
@@ -43,8 +43,6 @@ class DBChecker extends Module with DBCheckerConst {
   handler.err_req_r <> ctrl.err_req_r
   handler.err_req_w <> ctrl.err_req_w
   handler.dbte_sram_r <> dbte_mem.readPorts(1)
-  handler.refill_dbte_req_if <> ctrl.refill_dbte_req_if
-  ctrl.refill_dbte_rsp_if <> handler.refill_dbte_rsp_if
 
   debug_if.ctrl := ctrl.debug_if
   debug_if.flow := handler.debug_if
