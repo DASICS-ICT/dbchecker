@@ -9,14 +9,13 @@ module dbchecker_sim_tb();
     // DBChecker寄存器地址
     localparam reg_base = 32'h4000_0000;
     localparam reg_chk_en = 32'h0000_0000;        // reg 0
-    localparam reg_chk_mtdt_0 = 32'h0000_0004;
-    localparam reg_chk_mtdt_1 = 32'h0000_0008;
-    localparam reg_chk_mtdt_2 = 32'h0000_000C;
-    localparam reg_chk_cmd = 32'h0000_0010;       // reg 1
-    localparam reg_chk_err_addr_lo = 32'h0000_0014;       // reg 4
-    localparam reg_chk_err_addr_hi = 32'h0000_0018;      // reg 5
-    localparam reg_chk_err_info = 32'h0000_001C;      // reg 6
-    localparam reg_chk_err_cnt = 32'h0000_0020;       // reg 7
+    localparam reg_chk_err_addr_lo = 32'h0000_0004;       // reg 4
+    localparam reg_chk_err_addr_hi = 32'h0000_0008;      // reg 5
+    localparam reg_chk_err_info = 32'h0000_000C;      // reg 6
+    localparam reg_chk_err_cnt = 32'h0000_0010;       // reg 7
+    localparam reg_clr_err = 32'h0000_0014;
+    localparam sram_base = 32'h0000_0020;
+    localparam sram_size = 32'h0001_0000;
     
     // 现有声明保持不变
     reg aclk;
@@ -37,18 +36,13 @@ module dbchecker_sim_tb();
     test_design_axi_vip_output_0_slv_mem_t slave_agent;
     
     // 添加测试变量
-    bit [63:0] encrypted_metadata;
     bit [63:0] physical_pointer;
-    bit [127:0] test_metadata;
-    bit [64:0] test_cmd;
-    bit [127:0] test_key = 128'h0123456789ABCDEFFEDCBA9876543210;
+    bit [31:0] test_cmd;
     bit [31:0] err_cnt;
     bit [63:0] err_addr;
     bit [31:0] err_info;
     bit [31:0] val0, val1, val2, val3;
-
-    bit [31:0] physical_ptr_array [31:0];
-    bit [31:0] test_metadata_lo_arrary [31:0];
+    bit [127:0] val4, val5, val6, val7;
 
     // 添加AXI传输相关变量
     xil_axi_uint                id = 0;
@@ -118,6 +112,9 @@ module dbchecker_sim_tb();
         
         // 测试用例: 测试Write-Read操作
         test_rw_check();
+
+        // 测试用例: 测试密集分配释放
+        test_dense_alloc_free();
         
         // 测试用例: 测试错误计数器
         test_error_counters();
@@ -158,6 +155,7 @@ module dbchecker_sim_tb();
 
             if (val0 !== 32'h0000_0001) begin
                 $display("ERROR: DBChecker configuration verification failed");
+                $finish;
                 test_fail_count++;
             end else begin
                 $display("DBChecker configured successfully");
@@ -179,8 +177,8 @@ module dbchecker_sim_tb();
                 resp
             );
             
-            alloc_mtdt(1'b1, 1'b0, 12'h111, 48'h4000_0000, 48'h4000_1000);
-            physical_pointer = {16'h111, 48'h4000_0000};
+            alloc_mtdt(1'b1, 1'b0, 12'h1, 48'h4000_0000, 48'h4000_1000);
+            physical_pointer = {16'h1, 48'h4000_0000};
             
 
             $display("Allocated buffer physical pointer: 0x%0h", physical_pointer);
@@ -219,6 +217,7 @@ module dbchecker_sim_tb();
             end else begin
                 $display("ERROR: Valid buffer access caused errors: previous_err_cnt=0x%0h, current_err_cnt=0x%0h", 
                          val0, val1);
+                $finish;
                 test_fail_count++;
             end
         end
@@ -291,20 +290,13 @@ module dbchecker_sim_tb();
         begin
             $display("Test 6: Free Operation");
 
-            test_cmd = {1'b1, 2'b0, 1'b0, 15'b0, 1'b0, 12'h111}; // free dbet cache中的表项
-
-            ctrl_agent.AXI4LITE_WRITE_BURST(
-                reg_base + reg_chk_cmd, // chk_cmd地址
-                0, // prot
-                test_cmd, // free命令
-                resp
-            );
+            free_mtdt(12'h1);
 
             #100ns;
             
             // 准备测试数据
             write_data = 64'hF0F0F0F0F0F0F0F0;
-            physical_pointer = {16'h111, 32'h4000_0000};
+            physical_pointer = {16'h1, 48'h4000_0000};
             // 尝试访问已释放的缓冲区
             master_agent.AXI4_WRITE_BURST(
                 id,
@@ -343,40 +335,10 @@ module dbchecker_sim_tb();
             // 2. 构造 Free 命令
             // 格式参考: | v(1) | opcode(1) | reserved(14) | index(16) |
             // Opcode 0 = Free
-            test_cmd = {1'b1, 2'b0, 1'b1, 15'b0, 1'b0, invalid_index}; 
+            free_mtdt(invalid_index);
 
             $display("Sending Free command for invalid index: 0x%0h", invalid_index);
 
-            ctrl_agent.AXI4LITE_WRITE_BURST(
-                reg_base + reg_chk_cmd, // chk_cmd地址
-                0, // prot
-                test_cmd,
-                resp
-            );
-
-            // 3. 等待足够的时钟周期让状态机处理
-            // 如果存在Bug，状态机会在这里卡住，cmd_reg.v 永远不会拉低
-            #200ns;
-
-            // 4. 回读命令寄存器
-            ctrl_agent.AXI4LITE_READ_BURST(
-                reg_base + reg_chk_cmd, 
-                0, // prot
-                cmd_readback,
-                resp
-            );
-
-            // 5. 验证结果
-            // Bit 31 是 Valid 位。如果它变成了 0，说明状态机正确处理了无效条目的Free请求（即什么都不做并结束命令）。
-            // 如果它还是 1，说明发生了死锁。
-            if (cmd_readback[31] == 1'b0 || cmd_readback[28] == 1'b0) begin
-                $display("Success: Command register V-bit cleared. State machine handled invalid free correctly.");
-                test_pass_count++;
-            end else begin
-                $display("ERROR: Command register V-bit stuck at 1! Deadlock detected.");
-                $display("       Cmd Readback: 0x%0h", cmd_readback);
-                test_fail_count++;
-            end
         end
     endtask
 
@@ -451,6 +413,190 @@ module dbchecker_sim_tb();
             check_error_counter(0, 2);
         end
     endtask
+
+    task test_dense_alloc_free();
+        begin
+            $display("Test 9: Dense Allocation and Free");
+
+            ctrl_agent.AXI4LITE_READ_BURST(
+                reg_base + reg_chk_err_cnt, // chk_err_cnt地址
+                0, // prot
+                val0, // 错误计数器值
+                resp
+            );
+
+            alloc_mtdt(1'b1, 1'b1, 12'h333, 48'h4000_0000, 48'h4000_1000);
+            alloc_mtdt(1'b1, 1'b1, 12'h334, 48'h4000_1000, 48'h4000_2000);
+            alloc_mtdt(1'b1, 1'b1, 12'h335, 48'h4000_2000, 48'h4000_3000);
+            alloc_mtdt(1'b1, 1'b1, 12'h336, 48'h4000_3000, 48'h4000_4000);
+            alloc_mtdt(1'b1, 1'b1, 12'h337, 48'h4000_4000, 48'h4000_5000);
+            alloc_mtdt(1'b1, 1'b1, 12'h338, 48'h4000_5000, 48'h4000_6000);
+            alloc_mtdt(1'b1, 1'b1, 12'h339, 48'h4000_6000, 48'h4000_7000);
+            alloc_mtdt(1'b1, 1'b1, 12'h33a, 48'h4000_7000, 48'h4000_8000);
+
+            master_agent.AXI4_WRITE_BURST(
+                id,
+                {16'h333, 48'h4000_0000} + 32'h100,
+                len,
+                size,
+                burst,
+                lock,
+                cache,
+                prot,
+                region,
+                qos,
+                awuser,
+                64'hAAAA_AAAA_AAAA_AAAA,
+                write_wuser,
+                resp
+            );
+
+            master_agent.AXI4_WRITE_BURST(
+                id,
+                {16'h334, 48'h4000_1000} + 32'h100,
+                len,
+                size,
+                burst,
+                lock,
+                cache,
+                prot,
+                region,
+                qos,
+                awuser,
+                64'hBBBB_BBBB_BBBB_BBBB,
+                write_wuser,
+                resp
+            );
+
+            master_agent.AXI4_WRITE_BURST(
+                id,
+                {16'h335, 48'h4000_2000} + 32'h100,
+                len,
+                size,
+                burst,
+                lock,
+                cache,
+                prot,
+                region,
+                qos,
+                awuser,
+                64'hCCCC_CCCC_CCCC_CCCC,
+                write_wuser,
+                resp
+            );
+
+            master_agent.AXI4_WRITE_BURST(
+                id,
+                {16'h336, 48'h4000_3000} + 32'h100,
+                len,
+                size,
+                burst,
+                lock,
+                cache,
+                prot,
+                region,
+                qos,
+                awuser,
+                64'hDDDD_DDDD_DDDD_DDDD,
+                write_wuser,
+                resp
+            );
+
+            master_agent.AXI4_WRITE_BURST(
+                id,
+                {16'h337, 48'h4000_4000} + 32'h100,
+                len,
+                size,
+                burst,
+                lock,
+                cache,
+                prot,
+                region,
+                qos,
+                awuser,
+                64'hDDDD_DDDD_DDDD_DDDD,
+                write_wuser,
+                resp
+            );
+
+            master_agent.AXI4_WRITE_BURST(
+                id,
+                {16'h338, 48'h4000_5000} + 32'h100,
+                len,
+                size,
+                burst,
+                lock,
+                cache,
+                prot,
+                region,
+                qos,
+                awuser,
+                64'hEEEE_EEEE_EEEE_EEEE,
+                write_wuser,
+                resp
+            );
+
+            master_agent.AXI4_WRITE_BURST(
+                id,
+                {16'h339, 48'h4000_6000} + 32'h100,
+                len,
+                size,
+                burst,
+                lock,
+                cache,
+                prot,
+                region,
+                qos,
+                awuser,
+                64'hFFFF_FFFF_FFFF_FFFF,
+                write_wuser,
+                resp
+            );
+
+            master_agent.AXI4_WRITE_BURST(
+                id,
+                {16'h33a, 48'h4000_7000} + 32'h100,
+                len,
+                size,
+                burst,
+                lock,
+                cache,
+                prot,
+                region,
+                qos,
+                awuser,
+                64'h1111_2222_3333_4444,
+                write_wuser,
+                resp
+            );
+
+            free_mtdt(12'h333);
+            free_mtdt(12'h334);
+            free_mtdt(12'h335);
+            free_mtdt(12'h336);
+            free_mtdt(12'h337);
+            free_mtdt(12'h338);
+            free_mtdt(12'h339);
+            free_mtdt(12'h33a);
+
+            ctrl_agent.AXI4LITE_READ_BURST(
+                reg_base + reg_chk_err_cnt, // chk_err_cnt地址
+                0, // prot
+                val1, // 错误计数器值
+                resp
+            );
+
+            if (val1 == val0) begin
+                $display("Valid buffer access successful without errors");
+                test_pass_count++;
+            end else begin
+                $display("ERROR: Valid buffer access caused errors: previous_err_cnt=0x%0h, current_err_cnt=0x%0h", 
+                         val0, val1);
+                test_fail_count++;
+                $finish;
+            end
+        end
+    endtask
     
      // 任务: 测试错误计数器
     task test_error_counters();
@@ -473,11 +619,10 @@ module dbchecker_sim_tb();
             $display("Latest error: 0x%0h", err_cnt[3:0]);
             
             // 清除错误计数器
-            test_cmd = {1'b1, 2'b1, 29'b0}; // clr_err命令
             ctrl_agent.AXI4LITE_WRITE_BURST(
-                reg_base + reg_chk_cmd, // chk_cmd_hi
+                reg_base + reg_clr_err, // chk_cmd_hi
                 0, // prot
-                test_cmd, // clr_err命令
+                32'h1, // clr_err命令
                 resp
             );
             
@@ -496,6 +641,7 @@ module dbchecker_sim_tb();
                 test_pass_count++;
             end else begin
                 $display("ERROR: Error counters not cleared: 0x%0h", err_cnt);
+                $finish;
                 test_fail_count++;
             end
         end
@@ -554,6 +700,7 @@ module dbchecker_sim_tb();
             end else begin
                 $display("ERROR: DBChecker disable failed, errors recorded: previous_err_cnt=0x%0h, current_err_cnt=0x%0h", 
                          val0, val1);
+                $finish;
                 test_fail_count++;
             end
         end
@@ -623,55 +770,70 @@ module dbchecker_sim_tb();
                 $display("ERROR: Error counter %0d is %0d, expected %0d", 
                          counter_index, actual_value, expected_value);
                 test_fail_count++;
+                $finish;
             end
         end
     endtask
 
     task automatic alloc_mtdt(bit w, bit r, bit [11:0] index, bit [47:0] lo_bnd, bit [47:0] hi_bnd);
         begin
-            bit [31:0] write_mtdt_0 = lo_bnd[31:0];
-            bit [31:0] write_mtdt_1 = {hi_bnd[15:0], lo_bnd[47:32]};
-            bit [31:0] write_mtdt_2 = hi_bnd[47:16];
-            bit [31:0] alloc_cmd = {1'b1, 2'b10, 1'b0, 14'b0, w, r, index};
+            bit [127:0] new_mtdt = {17'b0, 1'b1, w, r, index, hi_bnd, lo_bnd};
+            int i;
 
-            ctrl_agent.AXI4LITE_WRITE_BURST(
-                reg_base + reg_chk_mtdt_0, // chk_en地址
-                0, // prot
-                write_mtdt_0, // 启用位
-                resp
-            );
-
-            ctrl_agent.AXI4LITE_WRITE_BURST(
-                reg_base + reg_chk_mtdt_1, // chk_en地址
-                0, // prot
-                write_mtdt_1, // 启用位
-                resp
-            );
-
-            ctrl_agent.AXI4LITE_WRITE_BURST(
-                reg_base + reg_chk_mtdt_2, // chk_en地址
-                0, // prot
-                write_mtdt_2, // 启用位
-                resp
-            );
-
-            ctrl_agent.AXI4LITE_WRITE_BURST(
-                reg_base + reg_chk_cmd, // chk_en地址
-                0, // prot
-                alloc_cmd, // 启用位
-                resp
-            );
+            for (i = 0; i < 4; i++) begin
+                ctrl_agent.AXI4LITE_WRITE_BURST(
+                    reg_base + sram_base + (index * 16) + i * 4,
+                    0, // prot
+                    new_mtdt[32*i +: 32], // 启用位
+                    resp
+                );
+            end
 
             #50ns;
-            ctrl_agent.AXI4LITE_READ_BURST(
-                reg_base + reg_chk_cmd,
-                0, // prot
-                val3,
-                resp
-            );
+            for (i = 0; i < 4; i++) begin
+                ctrl_agent.AXI4LITE_READ_BURST(
+                    reg_base + sram_base + (index * 16) + i * 4,
+                    0, // prot
+                    val4[32*i +: 32],
+                    resp
+                );
+            end
 
-            if (val3[28]) begin
+            if (new_mtdt != val4) begin
                 $display("ERROR: Allocation failed");
+                $finish;
+            end
+
+        end
+    endtask
+
+    task automatic free_mtdt(bit [11:0] index);
+        begin
+            bit [127:0] new_mtdt = 128'b0;
+            int i;
+
+            for (i = 0; i < 4; i++) begin
+                ctrl_agent.AXI4LITE_WRITE_BURST(
+                    reg_base + sram_base + (index * 16) + i * 4,
+                    0, // prot
+                    new_mtdt[32*i +: 32], // 启用位
+                    resp
+                );
+            end
+
+            #50ns;
+            for (i = 0; i < 4; i++) begin
+                ctrl_agent.AXI4LITE_READ_BURST(
+                    reg_base + sram_base + (index * 16) + i * 4,
+                    0, // prot
+                    val4[32*i +: 32],
+                    resp
+                );
+            end
+
+            if (new_mtdt != val4) begin
+                $display("ERROR: Free failed");
+                $finish;
             end
 
         end

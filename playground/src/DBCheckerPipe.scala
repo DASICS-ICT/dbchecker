@@ -46,7 +46,6 @@ class DBCheckerPipeStage1 extends Module with DBCheckerConst { // readDBTE
 
   val in_pipe     = IO(Flipped(Decoupled(new DBCheckerPipeMedium)))
   val out_pipe    = IO(Decoupled(new DBCheckerPipeMedium))
-  val dbte_v_bm   = IO(Input(UInt(dbte_num.W)))
   val dbte_sram_if = IO(Flipped(new MemoryReadPort(UInt(128.W), log2Up(dbte_num))))
 
   val pipe_v_reg      = RegInit(false.B)
@@ -62,7 +61,7 @@ class DBCheckerPipeStage1 extends Module with DBCheckerConst { // readDBTE
 
   val target_addr = Mux(in_pipe.fire, in_pipe.bits.axi_a.addr, pipe_medium_reg.axi_a.addr)
   val dbte_index = target_addr.asTypeOf(new DBCheckerPtr).get_index
-  val err_finv    = !dbte_v_bm(dbte_index) && !pipe_medium_reg.bypass
+  val err_finv    = !dbte_sram_if.data.asTypeOf(new DBCheckerMtdt).v && !pipe_medium_reg.bypass
 
   dbte_sram_if.enable  := true.B
   dbte_sram_if.address := dbte_index
@@ -109,27 +108,25 @@ class DBCheckerPipeStage2 extends Module with DBCheckerConst { // check request 
   val addr_ptr = pipe_medium_reg.axi_a.addr.asTypeOf(new DBCheckerPtr)
   val bnd_lo   = pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt).bnd_lo
   val bnd_hi   = pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt).bnd_hi
-  val r        = pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt).cmd.asTypeOf(new DBCheckerCommand).get_r
-  val w        = pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt).cmd.asTypeOf(new DBCheckerCommand).get_w
+  val r        = pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt).r
+  val w        = pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt).w
   
   val bnd_err  = (addr_ptr.access_addr < bnd_lo) || 
                  ((addr_ptr.access_addr + pipe_medium_reg.axi_a.len) >= bnd_hi)
   val type_mismatch  = Mux(pipe_medium_reg.axi_a_type, !w, !r)
-  val dev_err        = false.B
-  val access_err     = (bnd_err || type_mismatch || dev_err) && !pipe_medium_reg.bypass
+  val access_err     = (bnd_err || type_mismatch) && !pipe_medium_reg.bypass
 
   val err_info       = Wire(new DBCheckerErrInfo)
   err_info.err_mtdt_index := addr_ptr.get_index
   err_info.err_info       := Mux(bnd_err,!(addr_ptr.access_addr < bnd_lo), // 0: lo bound error, 1: hi bound error
-                             Mux(type_mismatch,!w, //0: read type mismatch, 1: write type mismatch
-                                dev_err))
+                             Mux(type_mismatch, w, 0.U)) // 0: cannot read, 1: cannot write
 
   in_pipe.ready      := !pipe_v_reg || out_pipe.fire
   out_pipe.valid     := pipe_v_reg
   out_pipe.bits      := pipe_medium_reg
   when(!pipe_medium_reg.err_v && access_err) {
     out_pipe.bits.err_v        := access_err
-    out_pipe.bits.err_req.typ  := Mux(bnd_err, err_bnd_farea, Mux(type_mismatch, err_bnd_ftype, err_wrong_dev))
+    out_pipe.bits.err_req.typ  := Mux(bnd_err, err_bnd_farea, err_bnd_ftype)
     out_pipe.bits.err_req.addr := addr_ptr.asUInt
     out_pipe.bits.err_req.info := err_info.asUInt
   }
@@ -305,7 +302,6 @@ class DBCheckerPipeline extends Module with DBCheckerConst {
   val m_axi_io_rx  = IO(new AxiMaster(48, 128))
   val s_axi_io_rx  = IO(new AxiSlave(64, 128, idWidth = 5))
   val ctrl_reg     = IO(Input(Vec(RegNum, UInt(32.W))))
-  val dbte_v_bm    = IO(Input(UInt(dbte_num.W)))
   val err_req_r    = IO(Decoupled(new DBCheckerErrReq))
   val err_req_w    = IO(Decoupled(new DBCheckerErrReq))
   val dbte_sram_r  = IO(Flipped(new MemoryReadPort(UInt(128.W), log2Up(dbte_num))))
@@ -326,7 +322,6 @@ class DBCheckerPipeline extends Module with DBCheckerConst {
   stage0.ctrl_en := ctrl_reg(chk_en).asTypeOf(new DBCheckerEnCtl)
 
   stage1.in_pipe <> stage0.out_pipe
-  stage1.dbte_v_bm := dbte_v_bm
   stage1.dbte_sram_if <> dbte_sram_r
 
   stage2.in_pipe <> stage1.out_pipe

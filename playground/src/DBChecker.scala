@@ -39,7 +39,6 @@ class DBChecker extends Module with DBCheckerConst {
   handler.m_axi_io_rx <> m_axi_io_rx
   handler.s_axi_io_rx <> s_axi_io_rx
   handler.ctrl_reg <> ctrl.ctrl_reg
-  handler.dbte_v_bm <> ctrl.dbte_v_bm
   handler.err_req_r <> ctrl.err_req_r
   handler.err_req_w <> ctrl.err_req_w
   handler.dbte_sram_r <> dbte_mem.readPorts(1)
