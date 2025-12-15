@@ -54,7 +54,7 @@ module dbchecker_sim_tb();
     // 添加AXI传输相关变量
     xil_axi_uint                id = 0;
     xil_axi_len_t               len = 0; // 单次传输
-    xil_axi_size_t              size = XIL_AXI_SIZE_16BYTE; // 64位
+    xil_axi_size_t              size = XIL_AXI_SIZE_16BYTE;
     xil_axi_burst_t             burst = XIL_AXI_BURST_TYPE_INCR;
     xil_axi_lock_t              lock = XIL_AXI_ALOCK_NOLOCK;
     xil_axi_cache_t             cache = 0;
@@ -109,7 +109,9 @@ module dbchecker_sim_tb();
         test_buffer_valid_access();
         
         // 测试用例: 测试buffer越界访问
-        test_buffer_out_of_bounds();
+        test_buffer_lo_lower_than_lo_bound();
+
+        test_buffer_up_higher_than_up_bound();
         
         // 测试用例: 测试权限检查
         test_read_to_wo_check();
@@ -153,7 +155,7 @@ module dbchecker_sim_tb();
             // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
             // 16bit index: 0x0, 12bit index: 0x0, 4bit index offset: 0x0
             // this metadata is for write valid / write out of bound / swap and free test
-            test_metadata = {4'h0, 20'b0, 1'b1, 1'b1, 1'b0, 5'h1, 48'h4000_1000, 48'h4000_0000};
+            test_metadata = {4'h0, 20'b0, 1'b1, 1'b1, 1'b0, 5'h1, 48'h4000_0040, 48'h4000_0000};
             master_agent.AXI4_WRITE_BURST(
                 id,
                 dbte_mb, // dbte index 0x0
@@ -413,8 +415,8 @@ module dbchecker_sim_tb();
             // 测试有效范围内的写入
             master_agent.AXI4_WRITE_BURST(
                 id,
-                physical_pointer + 32'h0100,
-                len,
+                physical_pointer,
+                len + 3,
                 size,
                 burst,
                 lock,
@@ -446,18 +448,17 @@ module dbchecker_sim_tb();
         end
     endtask
 
-     // 任务: 测试buffer越界访问
-    task test_buffer_out_of_bounds();
+    task test_buffer_lo_lower_than_lo_bound();
         begin
-            $display("Test 3: buffer Out-of-Bounds Access");
+            $display("Test 4: buffer_lo_lower_than_lo_bound Access");
             
             // 准备测试数据
-            write_data = 64'hD8D8D8D8D8D8D8D8;
+            write_data = 64'hA8A8A8A8A8A8A8A8;
             
             // 尝试越界写入 (基地址+偏移量+0x1001，超出范围)
             master_agent.AXI4_WRITE_BURST(
                 id,
-                physical_pointer + 32'h2000, // 超出范围地址
+                physical_pointer - 32'h10, // 超出范围地址
                 len,
                 size,
                 burst,
@@ -478,6 +479,37 @@ module dbchecker_sim_tb();
         end
     endtask
 
+    task test_buffer_up_higher_than_up_bound();
+        begin
+            $display("Test 5: buffer_up_higher_than_up_bound Access");
+            
+            // 准备测试数据
+            write_data = 64'hA8A8A8A8A8A8A8A8;
+            
+            // 尝试越界写入 (基地址+偏移量+0x1001，超出范围)
+            master_agent.AXI4_WRITE_BURST(
+                id,
+                physical_pointer, // 超出范围地址
+                len + 4,
+                size,
+                burst,
+                lock,
+                cache,
+                prot,
+                region,
+                qos,
+                awuser,
+                write_data,
+                write_wuser,
+                resp
+            );
+            
+            // 检查错误计数器是否增加
+            #100ns;
+            check_error_counter(0, 2);
+        end
+    endtask
+
     // 任务: 测试权限检查
     task test_read_to_wo_check();
         begin
@@ -489,7 +521,7 @@ module dbchecker_sim_tb();
             // 尝试读取只写缓冲区
             master_agent.AXI4_READ_BURST(
                 id,
-                physical_pointer + 32'h100, // 在范围内的地址
+                physical_pointer, // 在范围内的地址
                 len,
                 size,
                 burst,
@@ -538,7 +570,7 @@ module dbchecker_sim_tb();
             // 尝试访问已释放的缓冲区
             master_agent.AXI4_WRITE_BURST(
                 id,
-                physical_pointer + 32'h100, // 在范围内的地址
+                physical_pointer, // 在范围内的地址
                 len,
                 size,
                 burst,
@@ -686,8 +718,6 @@ module dbchecker_sim_tb();
         begin
             $display("Test 8: Write-Read Operation");
             
-            // 分配一个新的缓冲区
-            // 构造buffer元数据 (W=1, R=1, off_len=01100, id=2030, upbnd=0x6100, lobnd=0x6000)
             physical_pointer = {16'h20, 48'h4000_0000};
             
             $display("Allocated buffer for write - read test: 0x%0h", physical_pointer);
@@ -749,7 +779,7 @@ module dbchecker_sim_tb();
             
             // 检查错误计数器是否增加
             #100ns;
-            check_error_counter(0, 2);
+            check_error_counter(0, 3);
         end
     endtask
 

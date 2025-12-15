@@ -155,8 +155,9 @@ class DBCheckerPipeStage2 extends Module with DBCheckerConst { // check request 
   val r        = pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt).r.asBool
   val w        = pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt).w.asBool
   
+  val burst_len_bytes = ((pipe_medium_reg.axi_a.len +& 1.U) << pipe_medium_reg.axi_a.size) - 1.U
   val bnd_err  = (addr_ptr.access_addr < bnd_lo) || 
-                 ((addr_ptr.access_addr + pipe_medium_reg.axi_a.len) >= bnd_hi)
+                 ((addr_ptr.access_addr + burst_len_bytes) >= bnd_hi)
   val type_mismatch  = Mux(pipe_medium_reg.axi_a_type, !w, !r)
   val dev_err        = pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt).dev_id =/= pipe_medium_reg.axi_a.id
   val access_err     = (bnd_err || type_mismatch || dev_err) && !pipe_medium_reg.bypass
