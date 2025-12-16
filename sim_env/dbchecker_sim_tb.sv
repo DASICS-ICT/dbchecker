@@ -108,7 +108,7 @@ module dbchecker_sim_tb();
         // 测试用例: 分配buffer并测试有效访问
         test_buffer_valid_access();
         
-        // 测试用例: 测试buffer越界访问
+        // 测试用例: 测试写buffer越界访问
         test_buffer_lo_lower_than_lo_bound();
 
         test_buffer_up_higher_than_up_bound();
@@ -245,7 +245,7 @@ module dbchecker_sim_tb();
             // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
             // 16bit index: 0x20, 12bit index: 0x2, 4bit index offset: 0x0
             // this metadata is for Rw test
-            test_metadata = {4'h0, 20'h2, 1'b1, 1'b1, 1'b1, 5'h1, 48'h4000_1000, 48'h4000_0000};
+            test_metadata = {4'h0, 20'h2, 1'b1, 1'b1, 1'b1, 5'h1, 48'h4000_0040, 48'h4000_0000};
             master_agent.AXI4_WRITE_BURST(
                 id,
                 dbte_mb + (dbte_len * 32) / 8, // dbte index 2
@@ -486,7 +486,6 @@ module dbchecker_sim_tb();
             // 准备测试数据
             write_data = 64'hA8A8A8A8A8A8A8A8;
             
-            // 尝试越界写入 (基地址+偏移量+0x1001，超出范围)
             master_agent.AXI4_WRITE_BURST(
                 id,
                 physical_pointer, // 超出范围地址
@@ -517,7 +516,7 @@ module dbchecker_sim_tb();
             
             // 准备测试数据
             write_data = 64'hE9E9E9E9E9E9E9E9;
-            physical_pointer = {16'h00, 48'h4000_0000}; // 对应只读权限的DBTE
+            physical_pointer = {16'h00, 48'h4000_0000};
             // 尝试读取只写缓冲区
             master_agent.AXI4_READ_BURST(
                 id,
@@ -726,7 +725,7 @@ module dbchecker_sim_tb();
             write_data = 64'h123456789ABCDEF0;
             master_agent.AXI4_WRITE_BURST(
                 id,
-                physical_pointer + 32'h50, // 在范围内的地址
+                physical_pointer, // 在范围内的地址
                 len,
                 size,
                 burst,
@@ -744,7 +743,7 @@ module dbchecker_sim_tb();
             // 现在读取数据
             master_agent.AXI4_READ_BURST(
                 id,
-                physical_pointer + 32'h50, // 在范围内的地址
+                physical_pointer, // 在范围内的地址
                 len,
                 size,
                 burst,
@@ -762,8 +761,8 @@ module dbchecker_sim_tb();
             // 测试越界读取
             master_agent.AXI4_READ_BURST(
                 id,
-                physical_pointer + 32'h2000, // 超出范围地址
-                len,
+                physical_pointer, // 超出范围地址
+                len + 4,
                 size,
                 burst,
                 lock,
@@ -803,7 +802,7 @@ module dbchecker_sim_tb();
             write_data = 64'h123456789ABCDEF0;
             master_agent.AXI4_WRITE_BURST(
                 id,
-                physical_pointer + 32'h50, // 在范围内的地址
+                physical_pointer, // 在范围内的地址
                 len,
                 size,
                 burst,
@@ -822,7 +821,7 @@ module dbchecker_sim_tb();
             physical_pointer = {16'h21, 48'h4000_0000}; // 使用相同的DBTE Cache索引
             master_agent.AXI4_WRITE_BURST(
                 id,
-                physical_pointer + 32'h50, // 在范围内的地址
+                physical_pointer, // 在范围内的地址
                 len,
                 size,
                 burst,
