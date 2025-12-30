@@ -82,10 +82,26 @@ class DBCheckerPipeStage1 extends Module with DBCheckerConst { // readDBTE
   val dbte_index = addr_ptr.get_index
   val dbte_index_hi = addr_ptr.get_index_hi
 
+  // Transient Forwarding Logic (Security Safe)
+  val last_refill_data  = Reg(UInt(128.W))
+  val last_refill_index = Reg(UInt(16.W))
+  val refill_hazard_cnt = RegInit(0.U(2.W)) 
+
+  when(dbte_refill_rsp_if.fire) {
+    refill_hazard_cnt := 3.U 
+    last_refill_data  := dbte_refill_rsp_if.bits.dbte
+    last_refill_index := dbte_index 
+  }.elsewhen(refill_hazard_cnt > 0.U) {
+    refill_hazard_cnt := refill_hazard_cnt - 1.U
+  }
+
   dbte_sram_if.enable  := true.B
   dbte_sram_if.address := Mux(in_pipe.fire, in_pipe.bits, pipe_medium_reg).axi_a.addr.asTypeOf(new DBCheckerPtr).get_index_hi
   
-  val cached_dbte = dbte_sram_if.data
+  val sram_out = dbte_sram_if.data
+  val use_forwarding = (refill_hazard_cnt > 0.U) && (dbte_index === last_refill_index)
+
+  val cached_dbte = Mux(use_forwarding, last_refill_data, sram_out)
   val fetch_dbte_valid = dbte_v_bm(dbte_index_hi) && dbte_index === Cat(dbte_index_hi, cached_dbte.asTypeOf(new DBCheckerMtdt).index_offset)
 
   dbte_refill_req_if.bits.index := dbte_index
