@@ -110,9 +110,11 @@ class DBCheckerPipeStage2 extends Module with DBCheckerConst { // check request 
   val bnd_hi   = pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt).bnd_hi
   val r        = pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt).r
   val w        = pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt).w
+
+  val burst_len_bytes = ((pipe_medium_reg.axi_a.len +& 1.U) << pipe_medium_reg.axi_a.size) - 1.U
   
   val bnd_err  = (addr_ptr.access_addr < bnd_lo) || 
-                 ((addr_ptr.access_addr + pipe_medium_reg.axi_a.len) >= bnd_hi)
+                  ((addr_ptr.access_addr + burst_len_bytes) >= bnd_hi)
   val type_mismatch  = Mux(pipe_medium_reg.axi_a_type, !w, !r)
   val access_err     = (bnd_err || type_mismatch) && !pipe_medium_reg.bypass
 
@@ -193,6 +195,7 @@ class DBCheckerPipeStage4R extends Module with DBCheckerConst { // Return_R
   val pipe_v_reg      = RegInit(false.B)
   val ar_release_reg  = RegInit(false.B)
   val transfer_done   = WireInit(false.B)
+  val beat_cnt        = Reg(UInt(8.W)) 
 
   m_ar_chan.valid := false.B
   m_r_chan.ready  := false.B
@@ -207,6 +210,7 @@ class DBCheckerPipeStage4R extends Module with DBCheckerConst { // Return_R
     pipe_v_reg      := true.B
     ar_release_reg  := true.B
     pipe_medium_reg := in_pipe.bits
+    beat_cnt        := in_pipe.bits.axi_a.len
   }.elsewhen(transfer_done) {
     pipe_v_reg      := false.B
     ar_release_reg  := false.B
@@ -219,7 +223,10 @@ class DBCheckerPipeStage4R extends Module with DBCheckerConst { // Return_R
     s_r_chan.valid     := true.B
     s_r_chan.bits.data := 0.U
     s_r_chan.bits.resp := 0.U // fake SLVERR
-    s_r_chan.bits.last := true.B
+    s_r_chan.bits.last := (beat_cnt === 0.U)
+    when (s_r_chan.fire) {
+      beat_cnt := beat_cnt - 1.U
+    }
   }.otherwise {
     m_ar_chan.valid     := ar_release_reg
     s_r_chan.valid      := m_r_chan.valid

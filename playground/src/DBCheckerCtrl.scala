@@ -203,13 +203,10 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   val cnt_max_val = (1.U << next_cnt(0).getWidth) - 1.U
 
   for (i <- 0 until 4) {
-    next_cnt(i) := Mux(
-      err_cnt_reg_struct.cnt(i) <= cnt_max_val,
-      (err_cnt_reg_struct.cnt(
-        i
-      ) + (err_req_r.valid && err_req_r.bits.typ === i.U).asUInt + (err_req_w.valid && err_req_w.bits.typ === i.U).asUInt),
-      cnt_max_val
-    )
+    next_cnt(i) := 
+      err_cnt_reg_struct.cnt(i) +& 
+      (err_req_r.valid && err_req_r.bits.typ === i.U).asUInt +& 
+      (err_req_w.valid && err_req_w.bits.typ === i.U).asUInt
   }
   val err_latest = Mux(err_req_r.valid, 1.U << err_req_r.bits.typ, 1.U << err_req_w.bits.typ)
   val cnt_enable = !(clr_err_reg(0))
