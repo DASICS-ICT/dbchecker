@@ -127,6 +127,10 @@ module dbchecker_sim_tb();
         
         // 测试用例: 测试Write-Read操作
         test_rw_check();
+
+        test_outstanding_reads();
+
+        test_outstanding_writes();
         
         // 测试用例：测试DBTE Cache碰撞处理
         test_cache_collision_handling();
@@ -329,6 +333,51 @@ module dbchecker_sim_tb();
                 $display("Pre-fill [3] successful");
             end else begin
                 $display("ERROR: Pre-fill [3] failed: test_metadata=0x%0h, read_data=0x%0h", 
+                    test_metadata[127:0], read_data[127:0]);
+            end
+
+            // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
+            // 16bit index: 0xd60, 12bit index: 0xd6, 4bit index offset: 0x0
+            // this metadata is for outstanding writes
+            test_metadata = {4'h0, 20'hd6, 1'b1, 1'b1, 1'b0, 5'h1, 48'ha59f_87c0, 48'ha59f_7f40};
+            master_agent.AXI4_WRITE_BURST(
+                id,
+                dbte_mb + (dbte_len * 3424) / 8, // dbte index 2
+                len,
+                size,
+                burst,
+                lock,
+                cache,
+                prot,
+                region,
+                qos,
+                awuser,
+                test_metadata,
+                write_wuser,
+                resp
+            );
+
+            master_agent.AXI4_READ_BURST(
+                id,
+                dbte_mb + (dbte_len * 3424) / 8, // dbte index 2
+                len,
+                size,
+                burst,
+                lock,
+                cache,
+                prot,
+                region,
+                qos,
+                aruser,
+                read_data,
+                read_resp,
+                read_ruser
+            );
+
+            if (read_resp[0] === XIL_AXI_RESP_OKAY && read_data[127:0] === test_metadata[127:0]) begin
+                $display("Pre-fill [4] successful");
+            end else begin
+                $display("ERROR: Pre-fill [4] failed: test_metadata=0x%0h, read_data=0x%0h", 
                     test_metadata[127:0], read_data[127:0]);
             end
 
@@ -781,6 +830,196 @@ module dbchecker_sim_tb();
             check_error_counter(0, 3);
         end
     endtask
+
+    // 任务: 测试两个Outstanding读请求 (使用并发任务调用)
+    task test_outstanding_reads();
+        // 必须定义局部的接收变量，防止两个线程写入同一个全局变量导致冲突
+        bit [8*4096-1:0]            rdata_1, rdata_2;
+        xil_axi_resp_t [255:0]      resp_1, resp_2;
+        xil_axi_data_beat [255:0]   ruser_1, ruser_2;
+        bit [63:0]                  addr_1, addr_2;
+        
+        begin
+            $display("Test C: Outstanding Read Requests (Parallel AXI4_READ_BURST)");
+
+            test_cmd = {1'b1, 1'b0, 13'b0, 1'b0, 16'h0010}; // free dbet cache中的表项
+
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_chk_cmd, // chk_cmd地址
+                0, // prot
+                test_cmd,
+                resp
+            );
+            
+            // 准备两个合法的读地址
+            // 使用之前配置好的 Index 0x10 (Metadata: bound_lo=0x4000_1000)
+            addr_1 = {16'h0010, 48'h4000_7fc0}; 
+            addr_2 = {16'h0010, 48'h4000_8000}; // 偏移 0x40
+            
+            $display("Initiating 2 outstanding reads via fork...join");
+
+            // 使用 fork join 并发启动两个读任务
+            // VIP Master Agent 会自动处理这两个请求，在总线上产生 Outstanding 效果
+            fork
+                // 线程 1
+                begin
+                    master_agent.AXI4_READ_BURST(
+                        id,             // ID (AXI4允许同ID乱序，或者你可以给不同的ID)
+                        addr_1,         // 地址 1
+                        8'h3,            // len
+                        size,
+                        burst,
+                        lock,
+                        cache,
+                        prot,
+                        region,
+                        qos,
+                        aruser,
+                        rdata_1,        // 存入局部变量 1
+                        resp_1,         // 存入局部变量 1
+                        ruser_1
+                    );
+                    $display("Read 1 finished");
+                end
+
+                // 线程 2
+                begin
+                    // 为了确保波形上能看到 AR 紧挨着 AR，这里不加延时，直接发
+                    master_agent.AXI4_READ_BURST(
+                        id,             // ID
+                        addr_2,         // 地址 2
+                        8'h3,
+                        size,
+                        burst,
+                        lock,
+                        cache,
+                        prot,
+                        region,
+                        qos,
+                        aruser,
+                        rdata_2,        // 存入局部变量 2
+                        resp_2,         // 存入局部变量 2
+                        ruser_2
+                    );
+                    $display("Read 2 finished");
+                end
+            join
+
+            // fork join 结束意味着两个读操作都已完成
+            
+            // 验证结果
+            if (resp_1[0] === XIL_AXI_RESP_OKAY && resp_2[0] === XIL_AXI_RESP_OKAY) begin
+                $display("Outstanding reads completed successfully with OKAY response");
+                test_pass_count++;
+            end else begin
+                $display("ERROR: Outstanding reads failed. Resp1: %0d, Resp2: %0d", 
+                         resp_1[0], resp_2[0]);
+                test_fail_count++;
+            end
+        end
+    endtask
+
+    // 任务: 测试两个Outstanding写请求 (使用并发任务调用)
+    task test_outstanding_writes();
+        // 1. 定义局部变量：防止并发线程冲突
+        // 写数据缓冲区 (假设最大 4096 bytes)
+        bit [8*4096-1:0]            wdata_1, wdata_2;
+        // 写响应 (B通道)
+        xil_axi_resp_t [255:0]      resp_1, resp_2;
+        // 写用户自定义信号
+        xil_axi_data_beat [255:0]   wuser_1, wuser_2;
+        bit [63:0]                  addr_1, addr_2;
+        
+        begin
+            $display("Test D: Outstanding Write Requests (Parallel AXI4_WRITE_BURST)");
+
+            ctrl_agent.AXI4LITE_READ_BURST(
+                reg_base + reg_chk_err_cnt, // chk_err_cnt地址
+                0, // prot
+                val0, // 错误计数器值
+                resp
+            );
+
+            // --- 前置配置 (保持与原逻辑一致) ---
+            test_cmd = {1'b1, 1'b0, 13'b0, 1'b0, 16'h0d60}; 
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_chk_cmd,
+                0,
+                test_cmd,
+                resp
+            );
+            
+            // --- 2. 准备写地址和数据 ---
+            addr_1 = {16'h0d60, 48'ha59f_7fc0}; 
+            addr_2 = {16'h0d60, 48'ha59f_8000}; 
+            
+            // 初始化要写入的数据 (示例数据)
+            wdata_1 = {512{8'hAA}}; // 填充 AA
+            wdata_2 = {512{8'hBB}}; // 填充 BB
+            
+            $display("Initiating 2 outstanding writes via fork...join");
+
+            // --- 3. 使用 fork join 并发启动两个写任务 ---
+            // Xilinx VIP 会在内部处理 AW 和 W 通道的交织/流水
+            fork
+                // 线程 1: 发起第一次写
+                begin
+                    master_agent.AXI4_WRITE_BURST(
+                        id,             // AWID
+                        addr_1,         // AWADDR
+                        8'h3,           // AWLEN (4 beats)
+                        size,           // AWSIZE
+                        burst,          // AWBURST
+                        lock,           // AWLOCK
+                        cache,          // AWCACHE
+                        prot,           // AWPROT
+                        region,         // AWREGION
+                        qos,            // AWQOS
+                        awuser,         // AWUSER
+                        wdata_1,        // WDATA
+                        wuser_1,        // WUSER
+                        resp_1          // BRESP (输出)
+                    );
+                end
+
+                // 线程 2: 发起第二次写
+                begin
+                    master_agent.AXI4_WRITE_BURST(
+                        id,
+                        addr_2,
+                        8'h3,
+                        size,
+                        burst,
+                        lock,
+                        cache,
+                        prot,
+                        region,
+                        qos,
+                        awuser,
+                        wdata_2,
+                        wuser_2,
+                        resp_2
+                    );
+                end
+            join
+
+            ctrl_agent.AXI4LITE_READ_BURST(
+                reg_base + reg_chk_err_cnt, // chk_err_cnt地址
+                0, // prot
+                val1, // 错误计数器值
+                resp
+            );
+            if (val1 == val0) begin
+                $display("Refill operation successful without errors");
+                test_pass_count++;
+            end else begin
+                $display("ERROR: Refill operation caused errors: previous_err_cnt=0x%0h, current_err_cnt=0x%0h", 
+                         val0, val1);
+                test_fail_count++;
+            end
+        end
+    endtask
+
 
     task test_cache_collision_handling();
         begin
