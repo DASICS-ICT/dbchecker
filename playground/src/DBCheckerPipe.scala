@@ -6,14 +6,14 @@ import axi._
 
 // stage0-1: frontend
 class DBCheckerPipeStage0 extends Module with DBCheckerConst { // receive AXI request
-  val in_ar       = IO(Flipped(Decoupled(new AxiAddr(64, idWidth = 6))))
-  val in_aw       = IO(Flipped(Decoupled(new AxiAddr(64, idWidth = 6))))
+  val in_ar       = IO(Flipped(Decoupled(new AxiAddr(64, idWidth = 5))))
+  val in_aw       = IO(Flipped(Decoupled(new AxiAddr(64, idWidth = 5))))
   val out_pipe    = IO(Decoupled(new DBCheckerPipeMedium))
   val ctrl_en     = IO(Input(new DBCheckerEnCtl))
 
   val pipe_v_reg    = RegInit(false.B)
   val rw_reg        = RegInit(false.B) // 0: R, 1: W
-  val pipe_addr_reg = RegInit(0.U.asTypeOf(new AxiAddr(64, idWidth = 6)))
+  val pipe_addr_reg = RegInit(0.U.asTypeOf(new AxiAddr(64, idWidth = 5)))
 
 // handle logic
   when(in_ar.fire) {
@@ -26,7 +26,7 @@ class DBCheckerPipeStage0 extends Module with DBCheckerConst { // receive AXI re
     rw_reg        := true.B
   }.elsewhen(out_pipe.fire) {
     pipe_v_reg    := false.B
-    pipe_addr_reg := 0.U.asTypeOf(new AxiAddr(64, idWidth = 6))
+    pipe_addr_reg := 0.U.asTypeOf(new AxiAddr(64, idWidth = 5))
     rw_reg        := false.B
   }
 
@@ -37,7 +37,7 @@ class DBCheckerPipeStage0 extends Module with DBCheckerConst { // receive AXI re
   out_pipe.bits.axi_a      := pipe_addr_reg
   out_pipe.bits.axi_a_type := rw_reg
   out_pipe.bits.dbte       := 0.U.asTypeOf(UInt(128.W))
-  out_pipe.bits.bypass     := !ctrl_en.en_dev_bm(pipe_addr_reg.id)
+  out_pipe.bits.bypass     := !ctrl_en.en_dev_bm(pipe_addr_reg.id(4))
   out_pipe.bits.err_v      := false.B
   out_pipe.bits.err_req    := 0.U.asTypeOf(new DBCheckerErrReq)
 }
@@ -175,7 +175,7 @@ class DBCheckerPipeStage2 extends Module with DBCheckerConst { // check request 
   val bnd_err  = (addr_ptr.access_addr < bnd_lo) || 
                  ((addr_ptr.access_addr + burst_len_bytes) >= bnd_hi)
   val type_mismatch  = Mux(pipe_medium_reg.axi_a_type, !w, !r)
-  val dev_err        = pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt).dev_id =/= pipe_medium_reg.axi_a.id(5,4)
+  val dev_err        = pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt).dev_id =/= pipe_medium_reg.axi_a.id(4)
   val access_err     = (bnd_err || type_mismatch || dev_err) && !pipe_medium_reg.bypass
 
   val err_info       = Wire(new DBCheckerErrInfo)
@@ -248,9 +248,9 @@ class DBCheckerPipeStage3 extends Module with DBCheckerConst { // divide pipe to
 class DBCheckerPipeStage4R extends Module with DBCheckerConst { // Return_R
   val in_pipe = IO(Flipped(Decoupled(new DBCheckerPipeMedium)))
 
-  val s_r_chan  = IO(Decoupled(new AxiReadData(128, idWidth = 6)))
-  val m_ar_chan = IO(Decoupled(new AxiAddr(48)))
-  val m_r_chan  = IO(Flipped(Decoupled(new AxiReadData(128))))
+  val s_r_chan  = IO(Decoupled(new AxiReadData(128, idWidth = 5)))
+  val m_ar_chan = IO(Decoupled(new AxiAddr(64, idWidth = 5)))
+  val m_r_chan  = IO(Flipped(Decoupled(new AxiReadData(128, idWidth = 5))))
 
   val pipe_medium_reg = RegInit(0.U.asTypeOf(new DBCheckerPipeMedium))
   val pipe_v_reg      = RegInit(false.B)
@@ -259,13 +259,13 @@ class DBCheckerPipeStage4R extends Module with DBCheckerConst { // Return_R
   val beat_cnt        = Reg(UInt(8.W)) 
 
   m_ar_chan.valid := false.B
-  m_r_chan.ready  := false.B
-  s_r_chan.valid  := false.B
 
   m_ar_chan.bits      := pipe_medium_reg.axi_a
-  m_ar_chan.bits.addr := pipe_medium_reg.axi_a.addr(47, 0)
-  s_r_chan.bits       := m_r_chan.bits
-  s_r_chan.bits.id    := pipe_medium_reg.axi_a.id
+  // m_ar_chan.bits.addr := pipe_medium_reg.axi_a.addr
+  m_ar_chan.bits.addr := Cat(pipe_medium_reg.err_v, 0.U(15.W), pipe_medium_reg.axi_a.addr(47,0))
+  s_r_chan.bits      := m_r_chan.bits
+  s_r_chan.valid     := m_r_chan.valid
+  m_r_chan.ready     := s_r_chan.ready
 
   when(in_pipe.fire) {
     pipe_v_reg      := true.B
@@ -278,27 +278,12 @@ class DBCheckerPipeStage4R extends Module with DBCheckerConst { // Return_R
     pipe_medium_reg := 0.U.asTypeOf(new DBCheckerPipeMedium)
   }
 
-  when(pipe_medium_reg.err_v) {
-    // TODO: let software decide to pass / to slverr m_ar_chan.bits.addr := pipe_medium_reg.axi_a.addr(31, 0)
-    // maybe switch mode to accelerate? add intr mode?
-    s_r_chan.valid     := true.B
-    s_r_chan.bits.data := 0.U
-    s_r_chan.bits.resp := 0.U // fake SLVERR
-    s_r_chan.bits.last := (beat_cnt === 0.U)
-    when (s_r_chan.fire) {
-      beat_cnt := beat_cnt - 1.U
-    }
-  }.otherwise {
-    m_ar_chan.valid     := ar_release_reg
-    s_r_chan.valid      := m_r_chan.valid
-    m_r_chan.ready      := s_r_chan.ready
-  }
+  m_ar_chan.valid     := ar_release_reg
+
   when(m_ar_chan.fire) {
-    ar_release_reg := false.B
-  }
-  when(s_r_chan.fire && s_r_chan.bits.last) {
     transfer_done := true.B
   }
+
   in_pipe.ready := !pipe_v_reg || transfer_done
 }
 
@@ -306,61 +291,42 @@ class DBCheckerPipeStage4W extends Module with DBCheckerConst { // Return_W
   val in_pipe = IO(Flipped(Decoupled(new DBCheckerPipeMedium)))
 
   val s_w_chan  = IO(Flipped(Decoupled(new AxiWriteData(128))))
-  val s_b_chan  = IO(Decoupled(new AxiWriteResp(idWidth = 6)))
-  val m_aw_chan = IO(Decoupled(new AxiAddr(48)))
+  val s_b_chan  = IO(Decoupled(new AxiWriteResp(idWidth = 5)))
+  val m_aw_chan = IO(Decoupled(new AxiAddr(64, idWidth = 5)))
   val m_w_chan  = IO(Decoupled(new AxiWriteData(128)))
-  val m_b_chan  = IO(Flipped(Decoupled(new AxiWriteResp())))
+  val m_b_chan  = IO(Flipped(Decoupled(new AxiWriteResp(idWidth = 5))))
 
   val pipe_medium_reg = RegInit(0.U.asTypeOf(new DBCheckerPipeMedium))
   val pipe_v_reg      = RegInit(false.B)
   val aw_release_reg  = RegInit(false.B)
-  val w_release_reg   = RegInit(false.B)
   val transfer_done   = WireInit(false.B)
 
   m_aw_chan.valid := false.B
-  s_w_chan.ready := false.B
-  m_w_chan.valid := false.B
-  m_b_chan.ready := false.B
-  s_b_chan.valid := false.B
 
   m_aw_chan.bits      := pipe_medium_reg.axi_a
-  m_aw_chan.bits.addr := pipe_medium_reg.axi_a.addr(47, 0)
-  m_w_chan.bits       := s_w_chan.bits
-  s_b_chan.bits.user  := 0.U // dummy
-  s_b_chan.bits.resp  := m_b_chan.bits.resp
-  s_b_chan.bits.id    := pipe_medium_reg.axi_a.id
+  m_aw_chan.bits.addr := Cat(pipe_medium_reg.err_v, 0.U(15.W), pipe_medium_reg.axi_a.addr(47,0))
+
+  m_w_chan.bits := s_w_chan.bits
+  s_b_chan.bits := m_b_chan.bits
+
+  m_w_chan.valid := s_w_chan.valid
+  s_w_chan.ready := m_w_chan.ready
+  s_b_chan.valid := m_b_chan.valid
+  m_b_chan.ready := s_b_chan.ready
 
   when(in_pipe.fire) {
     pipe_v_reg      := true.B
     pipe_medium_reg := in_pipe.bits
     aw_release_reg  := true.B
-    w_release_reg   := true.B
   }.elsewhen(transfer_done) {
     pipe_v_reg      := false.B
     pipe_medium_reg := 0.U.asTypeOf(new DBCheckerPipeMedium)
     aw_release_reg  := false.B
-    w_release_reg   := false.B
   }
 
-  when(pipe_medium_reg.err_v) {
-    // TODO: let software decide to pass / to slverr
-    s_w_chan.ready     := w_release_reg
-    s_b_chan.valid     := !w_release_reg
-    s_b_chan.bits.resp := 0.U // fake SLVERR
-  }.otherwise {
-    m_aw_chan.valid     := aw_release_reg
-    m_w_chan.valid      := s_w_chan.valid & w_release_reg
-    s_w_chan.ready      := m_w_chan.ready & w_release_reg
-    s_b_chan.valid      := m_b_chan.valid & !w_release_reg
-    m_b_chan.ready      := s_b_chan.ready & !w_release_reg
-  }
+  m_aw_chan.valid     := aw_release_reg
+  
   when(m_aw_chan.fire) {
-    aw_release_reg := false.B
-  }
-  when(s_w_chan.fire && s_w_chan.bits.last) {
-    w_release_reg := false.B
-  }
-  when(s_b_chan.fire) {
     transfer_done := true.B
   }
 
@@ -368,8 +334,8 @@ class DBCheckerPipeStage4W extends Module with DBCheckerConst { // Return_W
 }
 
 class DBCheckerPipeline extends Module with DBCheckerConst {
-  val m_axi_io_rx  = IO(new AxiMaster(48, 128))
-  val s_axi_io_rx  = IO(new AxiSlave(64, 128, idWidth = 6))
+  val m_axi_io_rx  = IO(new AxiMaster(64, 128, idWidth = 5))
+  val s_axi_io_rx  = IO(new AxiSlave(64, 128, idWidth = 5))
   val ctrl_reg     = IO(Input(Vec(RegNum, UInt(32.W))))
   val dbte_v_bm    = IO(Input(UInt(dbte_num.W)))
   val err_req_r    = IO(Decoupled(new DBCheckerErrReq))

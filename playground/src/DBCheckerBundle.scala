@@ -109,7 +109,7 @@ class DBCheckerPtr extends Bundle with DBCheckerConst {
 
 // Pipeline passed structure
 class DBCheckerPipeMedium extends Bundle with DBCheckerConst {
-  val axi_a      = new AxiAddr(64, idWidth = 6)
+  val axi_a      = new AxiAddr(64, idWidth = 5)
   val axi_a_type = Bool()
   val dbte       = UInt(128.W)
   val bypass     = Bool() // bypass checker

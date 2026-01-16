@@ -5,8 +5,8 @@ import chisel3.util._
 import axi._
 
 class DBChecker extends Module with DBCheckerConst {
-  val m_axi_io_rx = IO(new AxiMaster(48, 128))
-  val s_axi_io_rx = IO(new AxiSlave(64, 128, idWidth = 6))
+  val m_axi_io_rx = IO(new AxiMaster(64, 128, idWidth = 5))
+  val s_axi_io_rx = IO(new AxiSlave(64, 128, idWidth = 5))
   val m_axi_dbte  = IO(new AxiMaster(48, 128))
   val s_axil_ctrl = IO(new AxiLiteSlave(32, 32))
 
