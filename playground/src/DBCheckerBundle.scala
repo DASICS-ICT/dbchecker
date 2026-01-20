@@ -47,7 +47,8 @@ class DBCheckerEnCtl extends Bundle with DBCheckerConst{
 }
 class DBCheckerMtdt extends Bundle with DBCheckerConst {
   val index_offset = UInt((16 - log2Up(dbte_num)).W)
-  val reserved     = UInt(( 8 + log2Up(dbte_num)).W)
+  val reserved     = UInt(( 7 + log2Up(dbte_num)).W)
+  val non_cached   = Bool()
   val v            = Bool()
   val w            = Bool()
   val r            = Bool()

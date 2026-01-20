@@ -253,7 +253,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
     }
     is(DBCheckerRefillState.WB) {
       val rb_mtdt = refill_data_reg.asTypeOf(new DBCheckerMtdt)
-      when (rb_mtdt.v) {
+      when (rb_mtdt.v && !rb_mtdt.non_cached) {
         // write back to SRAM and set bitmap
         when(is_freeing) {
           // do not write back when freeing
