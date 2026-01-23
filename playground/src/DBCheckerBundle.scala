@@ -7,6 +7,12 @@ trait DBCheckerConst {
   val RegNum    = 8
   val dbte_num  = 4096
 
+  // axi id width (IMPORTANT SETTING)
+  // when use in VCU128 model, set ooo_id width to 0, dev_id width to 5
+  // when use in out-of-order model(MPSoC and Simulation), set ooo_id width to 4, dev_id width to 1
+  val axi_id_width_ooo = 0
+  val axi_id_width_dev = 5
+
   // reg index (actual addr is 4 byte aligned, r/w lo-hi)
   // checker enable register  (0x0, RW) : checker enable / disable register
   val chk_en          = 0x0 // 0x00
@@ -110,7 +116,7 @@ class DBCheckerPtr extends Bundle with DBCheckerConst {
 
 // Pipeline passed structure
 class DBCheckerPipeMedium extends Bundle with DBCheckerConst {
-  val axi_a      = new AxiAddr(64, idWidth = 5)
+  val axi_a      = new AxiAddr(64, idWidth = new DBCheckerAxiId().getWidth)
   val axi_a_type = Bool()
   val dbte       = UInt(128.W)
   val bypass     = Bool() // bypass checker
@@ -125,9 +131,18 @@ class DBCheckerDBTEReq extends Bundle with DBCheckerConst {
 class DBCheckerDBTERsp extends Bundle with DBCheckerConst {
   val dbte = UInt(128.W)
 }
+
+
+
 object DBCheckerFetchState extends ChiselEnum {
   val RREQ, RRSP = Value
 }
 object DBCheckerRefillState extends ChiselEnum {
   val AR, R, WB = Value
+}
+
+// AXI def
+class DBCheckerAxiId extends Bundle with DBCheckerConst {
+  val dev_id = UInt(axi_id_width_dev.W)
+  val ooo_id = UInt(axi_id_width_ooo.W)
 }
