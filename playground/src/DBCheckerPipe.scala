@@ -37,7 +37,7 @@ class DBCheckerPipeStage0 extends Module with DBCheckerConst { // receive AXI re
   out_pipe.bits.axi_a      := pipe_addr_reg
   out_pipe.bits.axi_a_type := rw_reg
   out_pipe.bits.dbte       := 0.U.asTypeOf(UInt(128.W))
-  out_pipe.bits.bypass     := !ctrl_en.en_dev_bm(pipe_addr_reg.id(4))
+  out_pipe.bits.bypass     := !ctrl_en.en_dev_bm(pipe_addr_reg.id) // there is no outstanding in VCU128 model
   out_pipe.bits.err_v      := false.B
   out_pipe.bits.err_req    := 0.U.asTypeOf(new DBCheckerErrReq)
 }
@@ -175,7 +175,7 @@ class DBCheckerPipeStage2 extends Module with DBCheckerConst { // check request 
   val bnd_err  = (addr_ptr.access_addr < bnd_lo) || 
                  ((addr_ptr.access_addr + burst_len_bytes) >= bnd_hi)
   val type_mismatch  = Mux(pipe_medium_reg.axi_a_type, !w, !r)
-  val dev_err        = pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt).dev_id =/= pipe_medium_reg.axi_a.id(4)
+  val dev_err        = pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt).dev_id =/= pipe_medium_reg.axi_a.id
   val access_err     = (bnd_err || type_mismatch || dev_err) && !pipe_medium_reg.bypass
 
   val err_info       = Wire(new DBCheckerErrInfo)
