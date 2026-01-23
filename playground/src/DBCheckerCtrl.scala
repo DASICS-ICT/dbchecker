@@ -221,6 +221,8 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   // ar / r are used to read DBTE entries from memory
   // bits are preset to values
   m_axi_dbte.ar.bits       := 0.U.asTypeOf(m_axi_dbte.ar.bits)
+  m_axi_dbte.ar.bits.cache := "b1011".U(4.W) // 4'b1011, cacheable, bufferable
+  m_axi_dbte.ar.bits.prot  := "b010".U(3.W) // 3'b010, unprivileged, non-secure, data access
   m_axi_dbte.ar.bits.addr  := dbte_base + (refill_dbte_req_if.bits.index << 4) // DBTE entries addr from memory
   m_axi_dbte.ar.bits.len   := 0.U
   m_axi_dbte.ar.bits.size  := 4.U // 16 bytes

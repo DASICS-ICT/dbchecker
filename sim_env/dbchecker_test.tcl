@@ -381,8 +381,8 @@ proc cr_bd_test_design { parentCell } {
    CONFIG.WUSER_WIDTH {0} \
  ] $axi_vip_ctrl
 
-  # Create instance: axi_vip_input, and set properties
-  set axi_vip_input [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_vip:1.1 axi_vip_input ]
+  # Create instance: axi_vip_input_0, and set properties
+  set axi_vip_input_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_vip:1.1 axi_vip_input_0 ]
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.ARUSER_WIDTH {0} \
@@ -398,7 +398,7 @@ proc cr_bd_test_design { parentCell } {
    CONFIG.HAS_REGION {1} \
    CONFIG.HAS_RRESP {1} \
    CONFIG.HAS_WSTRB {1} \
-   CONFIG.ID_WIDTH {0} \
+   CONFIG.ID_WIDTH {4} \
    CONFIG.INTERFACE_MODE {MASTER} \
    CONFIG.PROTOCOL {AXI4} \
    CONFIG.READ_WRITE_MODE {READ_WRITE} \
@@ -407,13 +407,42 @@ proc cr_bd_test_design { parentCell } {
    CONFIG.SUPPORTS_NARROW {1} \
    CONFIG.WUSER_BITS_PER_BYTE {0} \
    CONFIG.WUSER_WIDTH {0} \
- ] $axi_vip_input
+ ] $axi_vip_input_0
+
+   # Create instance: axi_vip_input_1, and set properties
+  set axi_vip_input_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_vip:1.1 axi_vip_input_1 ]
+  set_property -dict [ list \
+   CONFIG.ADDR_WIDTH {64} \
+   CONFIG.ARUSER_WIDTH {0} \
+   CONFIG.AWUSER_WIDTH {0} \
+   CONFIG.BUSER_WIDTH {0} \
+   CONFIG.DATA_WIDTH {128} \
+   CONFIG.HAS_BRESP {1} \
+   CONFIG.HAS_BURST {1} \
+   CONFIG.HAS_CACHE {1} \
+   CONFIG.HAS_LOCK {1} \
+   CONFIG.HAS_PROT {1} \
+   CONFIG.HAS_QOS {1} \
+   CONFIG.HAS_REGION {1} \
+   CONFIG.HAS_RRESP {1} \
+   CONFIG.HAS_WSTRB {1} \
+   CONFIG.ID_WIDTH {4} \
+   CONFIG.INTERFACE_MODE {MASTER} \
+   CONFIG.PROTOCOL {AXI4} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
+   CONFIG.RUSER_BITS_PER_BYTE {0} \
+   CONFIG.RUSER_WIDTH {0} \
+   CONFIG.SUPPORTS_NARROW {1} \
+   CONFIG.WUSER_BITS_PER_BYTE {0} \
+   CONFIG.WUSER_WIDTH {0} \
+ ] $axi_vip_input_1
 
   # Create instance: axi_vip_output, and set properties
   set axi_vip_output [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_vip:1.1 axi_vip_output ]
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {32} \
    CONFIG.DATA_WIDTH {128} \
+   CONFIG.ID_WIDTH {5} \
    CONFIG.INTERFACE_MODE {SLAVE} \
    CONFIG.PROTOCOL {AXI4} \
    CONFIG.READ_WRITE_MODE {READ_WRITE} \
@@ -426,12 +455,6 @@ proc cr_bd_test_design { parentCell } {
    CONFIG.C_SIZE {1} \
    CONFIG.LOGO_FILE {data/sym_notgate.png} \
  ] $dbchecker_reset_gen
-
-  # Create instance: xlconstant_0, and set properties
-  set xlconstant_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 xlconstant_0 ]
-  set_property -dict [ list \
-   CONFIG.CONST_WIDTH {5} \
-  ] $xlconstant_0
 
   # Create instance: dbchecker_wrapper_0, and set properties
   set block_name dbchecker_wrapper
@@ -450,25 +473,33 @@ proc cr_bd_test_design { parentCell } {
    CONFIG.NUM_MI {1} \
    CONFIG.NUM_SI {2} \
   ] $axi_interconnect_0
+
+  set axi_interconnect_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_interconnect:2.1 axi_interconnect_1 ]
+  set_property -dict [ list \
+   CONFIG.NUM_MI {1} \
+   CONFIG.NUM_SI {2} \
+  ] $axi_interconnect_1
   
   # Create interface connections
   connect_bd_intf_net -intf_net axi_interconnect_0_M00_AXI [get_bd_intf_pins axi_interconnect_0/M00_AXI] [get_bd_intf_pins axi_vip_output/S_AXI]
-  connect_bd_intf_net -intf_net axi_vip_0_M_AXI [get_bd_intf_pins axi_vip_input/M_AXI] [get_bd_intf_pins dbchecker_wrapper_0/s_axi_io_rx]
+  connect_bd_intf_net -intf_net axi_vip_0_M_AXI [get_bd_intf_pins axi_vip_input_0/M_AXI] [get_bd_intf_pins axi_interconnect_1/S00_AXI]
+  connect_bd_intf_net -intf_net axi_vip_1_M_AXI [get_bd_intf_pins axi_vip_input_1/M_AXI] [get_bd_intf_pins axi_interconnect_1/S01_AXI]
+  connect_bd_intf_net -intf_net axi_vip_ic_M_AXI [get_bd_intf_pins axi_interconnect_1/M00_AXI] [get_bd_intf_pins dbchecker_wrapper_0/s_axi_io_rx]
   connect_bd_intf_net -intf_net axi_vip_ctrl_M_AXI [get_bd_intf_pins axi_vip_ctrl/M_AXI] [get_bd_intf_pins dbchecker_wrapper_0/s_axil_ctrl]
   connect_bd_intf_net -intf_net dbchecker_wrapper_0_m_axi_dbte [get_bd_intf_pins axi_interconnect_0/S00_AXI] [get_bd_intf_pins dbchecker_wrapper_0/m_axi_dbte]
   connect_bd_intf_net -intf_net dbchecker_wrapper_0_m_axi_io_rx [get_bd_intf_pins axi_interconnect_0/S01_AXI] [get_bd_intf_pins dbchecker_wrapper_0/m_axi_io_rx]
 
   # Create port connections
   connect_bd_net -net dbchecker_reset_gen_Res [get_bd_pins dbchecker_reset_gen/Res] [get_bd_pins dbchecker_wrapper_0/reset]
-  connect_bd_net -net sim_clk_gen_0_clk [get_bd_ports aclk_0] [get_bd_pins axi_interconnect_0/ACLK] [get_bd_pins axi_interconnect_0/M00_ACLK] [get_bd_pins axi_interconnect_0/S00_ACLK] [get_bd_pins axi_interconnect_0/S01_ACLK] [get_bd_pins axi_vip_ctrl/aclk] [get_bd_pins axi_vip_input/aclk] [get_bd_pins axi_vip_output/aclk] [get_bd_pins dbchecker_wrapper_0/clock]
-  connect_bd_net -net sim_rst_gen_0_rst [get_bd_ports aresetn_0] [get_bd_pins axi_vip_ctrl/aresetn] [get_bd_pins axi_vip_input/aresetn] [get_bd_pins axi_vip_output/aresetn] [get_bd_pins dbchecker_reset_gen/Op1] [get_bd_pins axi_interconnect_0/ARESETN] [get_bd_pins axi_interconnect_0/S00_ARESETN] [get_bd_pins axi_interconnect_0/M00_ARESETN] [get_bd_pins axi_interconnect_0/S01_ARESETN]
-  connect_bd_net -net xlconstant_0_dout [get_bd_pins dbchecker_wrapper_0/s_axi_io_rx_arid] [get_bd_pins dbchecker_wrapper_0/s_axi_io_rx_awid] [get_bd_pins xlconstant_0/dout]
-
+  connect_bd_net -net sim_clk_gen_0_clk [get_bd_ports aclk_0] [get_bd_pins axi_interconnect_0/ACLK] [get_bd_pins axi_interconnect_0/M00_ACLK] [get_bd_pins axi_interconnect_0/S00_ACLK] [get_bd_pins axi_interconnect_0/S01_ACLK] [get_bd_pins axi_interconnect_1/S00_ACLK] [get_bd_pins axi_interconnect_1/S01_ACLK] [get_bd_pins axi_interconnect_1/M00_ACLK] [get_bd_pins axi_interconnect_1/ACLK] [get_bd_pins axi_vip_ctrl/aclk] [get_bd_pins axi_vip_input_0/aclk] [get_bd_pins axi_vip_input_1/aclk] [get_bd_pins axi_vip_output/aclk] [get_bd_pins dbchecker_wrapper_0/clock]
+  connect_bd_net -net sim_rst_gen_0_rst [get_bd_ports aresetn_0] [get_bd_pins axi_vip_ctrl/aresetn] [get_bd_pins axi_vip_input_0/aresetn] [get_bd_pins axi_vip_input_1/aresetn] [get_bd_pins axi_vip_output/aresetn] [get_bd_pins dbchecker_reset_gen/Op1] [get_bd_pins axi_interconnect_0/ARESETN] [get_bd_pins axi_interconnect_0/S00_ARESETN] [get_bd_pins axi_interconnect_0/M00_ARESETN] [get_bd_pins axi_interconnect_0/S01_ARESETN] [get_bd_pins axi_interconnect_1/ARESETN] [get_bd_pins axi_interconnect_1/S00_ARESETN] [get_bd_pins axi_interconnect_1/S01_ARESETN] [get_bd_pins axi_interconnect_1/M00_ARESETN]
+  
   # Create address segments
   assign_bd_address -offset 0x00000000 -range 0x000100000000 -target_address_space [get_bd_addr_spaces axi_vip_ctrl/Master_AXI] [get_bd_addr_segs dbchecker_wrapper_0/s_axil_ctrl/reg0] -force
-  assign_bd_address -offset 0x00000000 -range 0x00010000000000000000 -target_address_space [get_bd_addr_spaces axi_vip_input/Master_AXI] [get_bd_addr_segs dbchecker_wrapper_0/s_axi_io_rx/reg0] -force
+  assign_bd_address -offset 0x00000000 -range 0x00010000000000000000 -target_address_space [get_bd_addr_spaces axi_vip_input_0/Master_AXI] [get_bd_addr_segs dbchecker_wrapper_0/s_axi_io_rx/reg0] -force
+  assign_bd_address -offset 0x00000000 -range 0x00010000000000000000 -target_address_space [get_bd_addr_spaces axi_vip_input_1/Master_AXI] [get_bd_addr_segs dbchecker_wrapper_0/s_axi_io_rx/reg0] -force
   assign_bd_address -offset 0x40000000 -range 0x000100000 -target_address_space [get_bd_addr_spaces dbchecker_wrapper_0/m_axi_dbte] [get_bd_addr_segs axi_vip_output/S_AXI/Reg] -force
-  assign_bd_address -offset 0x40000000 -range 0x000100000 -target_address_space [get_bd_addr_spaces dbchecker_wrapper_0/m_axi_io_rx] [get_bd_addr_segs axi_vip_output/S_AXI/Reg] -force
+  assign_bd_address -offset 0x0 -range 0x8000000000000000 -target_address_space [get_bd_addr_spaces dbchecker_wrapper_0/m_axi_io_rx] [get_bd_addr_segs axi_vip_output/S_AXI/Reg] -force
 
 
   # Restore current instance

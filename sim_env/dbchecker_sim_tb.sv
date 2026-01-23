@@ -1,7 +1,8 @@
 `timescale 1ns / 1ps
 
 import axi_vip_pkg::*;
-import test_design_axi_vip_input_0_pkg::*;
+import test_design_axi_vip_input_0_0_pkg::*;
+import test_design_axi_vip_input_1_0_pkg::*;
 import test_design_axi_vip_output_0_pkg::*;
 import test_design_axi_vip_ctrl_0_pkg::*;
 
@@ -33,7 +34,8 @@ module dbchecker_sim_tb();
 
     always #10ns aclk = ~aclk; // 50MHz
     
-    test_design_axi_vip_input_0_mst_t master_agent;
+    test_design_axi_vip_input_0_0_mst_t master_agent_0;
+    test_design_axi_vip_input_1_0_mst_t master_agent_1;
     test_design_axi_vip_ctrl_0_mst_t ctrl_agent;
     test_design_axi_vip_output_0_slv_mem_t slave_agent;
     
@@ -85,12 +87,13 @@ module dbchecker_sim_tb();
 
     initial begin
         // Create agents
-        master_agent = new("master agent", UUT.axi_vip_input.inst.IF);
+        master_agent_0 = new("master agent", UUT.axi_vip_input_0.inst.IF);
+        master_agent_1 = new("master agent", UUT.axi_vip_input_1.inst.IF);
         ctrl_agent = new("ctrl agent", UUT.axi_vip_ctrl.inst.IF);
         slave_agent = new("slave agent", UUT.axi_vip_output.inst.IF);
 
         // Start the agents
-        master_agent.start_master();
+        master_agent_1.start_master();
         ctrl_agent.start_master();
         slave_agent.start_slave();
 
@@ -160,7 +163,7 @@ module dbchecker_sim_tb();
             // 16bit index: 0x0, 12bit index: 0x0, 4bit index offset: 0x0
             // this metadata is for write valid / write out of bound / swap and free test
             test_metadata = {4'h0, 20'b0, 1'b1, 1'b1, 1'b0, 5'h1, 48'h4000_0040, 48'h4000_0000};
-            master_agent.AXI4_WRITE_BURST(
+            master_agent_1.AXI4_WRITE_BURST(
                 id,
                 dbte_mb, // dbte index 0x0
                 len,
@@ -177,7 +180,7 @@ module dbchecker_sim_tb();
                 resp
             );
 
-            master_agent.AXI4_READ_BURST(
+            master_agent_1.AXI4_READ_BURST(
                 id,
                 dbte_mb, // dbte index 0x0
                 len,
@@ -205,7 +208,7 @@ module dbchecker_sim_tb();
             // 16bit index: 0x10, 12bit index: 0x1, 4bit index offset: 0x0
             // this metadta is for access DBTE
             test_metadata = {4'h0, 20'b1, 1'b1, 1'b1, 1'b1, 5'h1, 48'h4010_0000, 48'h4000_1000};
-            master_agent.AXI4_WRITE_BURST(
+            master_agent_1.AXI4_WRITE_BURST(
                 id,
                 dbte_mb + (dbte_len * 16) / 8, // dbte index 0x10
                 len,
@@ -222,7 +225,7 @@ module dbchecker_sim_tb();
                 resp
             );
 
-            master_agent.AXI4_READ_BURST(
+            master_agent_1.AXI4_READ_BURST(
                 id,
                 dbte_mb + (dbte_len * 16) / 8, // dbte index 0x10
                 len,
@@ -250,7 +253,7 @@ module dbchecker_sim_tb();
             // 16bit index: 0x20, 12bit index: 0x2, 4bit index offset: 0x0
             // this metadata is for Rw test
             test_metadata = {4'h0, 20'h2, 1'b1, 1'b1, 1'b1, 5'h1, 48'h4000_0040, 48'h4000_0000};
-            master_agent.AXI4_WRITE_BURST(
+            master_agent_1.AXI4_WRITE_BURST(
                 id,
                 dbte_mb + (dbte_len * 32) / 8, // dbte index 2
                 len,
@@ -267,7 +270,7 @@ module dbchecker_sim_tb();
                 resp
             );
 
-            master_agent.AXI4_READ_BURST(
+            master_agent_1.AXI4_READ_BURST(
                 id,
                 dbte_mb + (dbte_len * 32) / 8, // dbte index 2
                 len,
@@ -295,7 +298,7 @@ module dbchecker_sim_tb();
             // 16bit index: 0x21, 12bit index: 0x2, 4bit index offset: 0x1
             // this metadata is for dbte cache collision
             test_metadata = {4'h1, 20'h2, 1'b1, 1'b1, 1'b1, 5'h1, 48'h4000_1000, 48'h4000_0000};
-            master_agent.AXI4_WRITE_BURST(
+            master_agent_1.AXI4_WRITE_BURST(
                 id,
                 dbte_mb + (dbte_len * 33) / 8, // dbte index 2
                 len,
@@ -312,7 +315,7 @@ module dbchecker_sim_tb();
                 resp
             );
 
-            master_agent.AXI4_READ_BURST(
+            master_agent_1.AXI4_READ_BURST(
                 id,
                 dbte_mb + (dbte_len * 33) / 8, // dbte index 2
                 len,
@@ -340,7 +343,7 @@ module dbchecker_sim_tb();
             // 16bit index: 0xd60, 12bit index: 0xd6, 4bit index offset: 0x0
             // this metadata is for outstanding writes
             test_metadata = {4'h0, 20'hd6, 1'b1, 1'b1, 1'b0, 5'h1, 48'ha59f_87c0, 48'ha59f_7f40};
-            master_agent.AXI4_WRITE_BURST(
+            master_agent_1.AXI4_WRITE_BURST(
                 id,
                 dbte_mb + (dbte_len * 3424) / 8, // dbte index 2
                 len,
@@ -357,7 +360,7 @@ module dbchecker_sim_tb();
                 resp
             );
 
-            master_agent.AXI4_READ_BURST(
+            master_agent_1.AXI4_READ_BURST(
                 id,
                 dbte_mb + (dbte_len * 3424) / 8, // dbte index 2
                 len,
@@ -392,7 +395,7 @@ module dbchecker_sim_tb();
             ctrl_agent.AXI4LITE_WRITE_BURST(
                 reg_base + reg_chk_en, // chk_en地址
                 0, // prot
-                32'h0000_0002, // 启用位
+                32'h0000_0003, // 启用位
                 resp
             );
 
@@ -431,7 +434,7 @@ module dbchecker_sim_tb();
                 resp
             );
 
-            if (val0 !== 32'h0000_0002 || val1 !== dbte_mb[31:0] || val2 !== dbte_mb[47:32]) begin
+            if (val0 !== 32'h0000_0003 || val1 !== dbte_mb[31:0] || val2 !== dbte_mb[47:32]) begin
                 $display("ERROR: DBChecker configuration verification failed");
                 test_fail_count++;
             end else begin
@@ -454,7 +457,7 @@ module dbchecker_sim_tb();
                 resp
             );
             
-            physical_pointer = {16'h0, 32'h4000_0000};
+            physical_pointer = {16'h0, 48'h4000_0000};
 
             $display("Allocated buffer physical pointer: 0x%0h", physical_pointer);
             
@@ -462,7 +465,7 @@ module dbchecker_sim_tb();
             write_data = 64'hC7C7C7C7C7C7C7C7;
             
             // 测试有效范围内的写入
-            master_agent.AXI4_WRITE_BURST(
+            master_agent_1.AXI4_WRITE_BURST(
                 id,
                 physical_pointer,
                 len + 3,
@@ -505,7 +508,7 @@ module dbchecker_sim_tb();
             write_data = 64'hA8A8A8A8A8A8A8A8;
             
             // 尝试越界写入 (基地址+偏移量+0x1001，超出范围)
-            master_agent.AXI4_WRITE_BURST(
+            master_agent_1.AXI4_WRITE_BURST(
                 id,
                 physical_pointer - 32'h10, // 超出范围地址
                 len,
@@ -535,7 +538,7 @@ module dbchecker_sim_tb();
             // 准备测试数据
             write_data = 64'hA8A8A8A8A8A8A8A8;
             
-            master_agent.AXI4_WRITE_BURST(
+            master_agent_1.AXI4_WRITE_BURST(
                 id,
                 physical_pointer, // 超出范围地址
                 len + 4,
@@ -567,7 +570,7 @@ module dbchecker_sim_tb();
             write_data = 64'hE9E9E9E9E9E9E9E9;
             physical_pointer = {16'h00, 48'h4000_0000};
             // 尝试读取只写缓冲区
-            master_agent.AXI4_READ_BURST(
+            master_agent_1.AXI4_READ_BURST(
                 id,
                 physical_pointer, // 在范围内的地址
                 len,
@@ -614,9 +617,9 @@ module dbchecker_sim_tb();
 
             // 准备测试数据
             write_data = 64'hF0F0F0F0F0F0F0F0;
-            physical_pointer = {16'h0, 32'h4000_0000};
+            physical_pointer = {16'h0, 48'h4000_0000};
             // 尝试访问已释放的缓冲区
-            master_agent.AXI4_WRITE_BURST(
+            master_agent_1.AXI4_WRITE_BURST(
                 id,
                 physical_pointer, // 在范围内的地址
                 len,
@@ -656,7 +659,7 @@ module dbchecker_sim_tb();
             // 首先free dbte表中的项
             // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
             test_metadata = 128'b0;
-            master_agent.AXI4_WRITE_BURST(
+            master_agent_1.AXI4_WRITE_BURST(
                 id,
                 {16'h10, dbte_mb}, // dbte index 0
                 len,
@@ -686,9 +689,9 @@ module dbchecker_sim_tb();
             
             // 准备测试数据
             write_data = 64'hF0F0F0F0F0F0F0F0;
-            physical_pointer = {16'h0, 32'h4000_0000};
+            physical_pointer = {16'h0, 48'h4000_0000};
             // 尝试访问已释放的缓冲区
-            master_agent.AXI4_WRITE_BURST(
+            master_agent_1.AXI4_WRITE_BURST(
                 id,
                 physical_pointer + 32'h100, // 在范围内的地址
                 len,
@@ -772,7 +775,7 @@ module dbchecker_sim_tb();
             
             // 首先写入一些数据
             write_data = 64'h123456789ABCDEF0;
-            master_agent.AXI4_WRITE_BURST(
+            master_agent_1.AXI4_WRITE_BURST(
                 id,
                 physical_pointer, // 在范围内的地址
                 len,
@@ -790,7 +793,7 @@ module dbchecker_sim_tb();
             );
             
             // 现在读取数据
-            master_agent.AXI4_READ_BURST(
+            master_agent_1.AXI4_READ_BURST(
                 id,
                 physical_pointer, // 在范围内的地址
                 len,
@@ -808,7 +811,7 @@ module dbchecker_sim_tb();
             );
             
             // 测试越界读取
-            master_agent.AXI4_READ_BURST(
+            master_agent_1.AXI4_READ_BURST(
                 id,
                 physical_pointer, // 超出范围地址
                 len + 4,
@@ -863,8 +866,8 @@ module dbchecker_sim_tb();
             fork
                 // 线程 1
                 begin
-                    master_agent.AXI4_READ_BURST(
-                        id,             // ID (AXI4允许同ID乱序，或者你可以给不同的ID)
+                    master_agent_1.AXI4_READ_BURST(
+                        1,             // ID (AXI4允许同ID乱序，或者你可以给不同的ID)
                         addr_1,         // 地址 1
                         8'h3,            // len
                         size,
@@ -885,8 +888,8 @@ module dbchecker_sim_tb();
                 // 线程 2
                 begin
                     // 为了确保波形上能看到 AR 紧挨着 AR，这里不加延时，直接发
-                    master_agent.AXI4_READ_BURST(
-                        id,             // ID
+                    master_agent_1.AXI4_READ_BURST(
+                        2,             // ID
                         addr_2,         // 地址 2
                         8'h3,
                         size,
@@ -964,8 +967,8 @@ module dbchecker_sim_tb();
             fork
                 // 线程 1: 发起第一次写
                 begin
-                    master_agent.AXI4_WRITE_BURST(
-                        id,             // AWID
+                    master_agent_1.AXI4_WRITE_BURST(
+                        1,             // AWID
                         addr_1,         // AWADDR
                         8'h3,           // AWLEN (4 beats)
                         size,           // AWSIZE
@@ -984,8 +987,8 @@ module dbchecker_sim_tb();
 
                 // 线程 2: 发起第二次写
                 begin
-                    master_agent.AXI4_WRITE_BURST(
-                        id,
+                    master_agent_1.AXI4_WRITE_BURST(
+                        2,
                         addr_2,
                         8'h3,
                         size,
@@ -1039,7 +1042,7 @@ module dbchecker_sim_tb();
             
             // 首先写入一些数据
             write_data = 64'h123456789ABCDEF0;
-            master_agent.AXI4_WRITE_BURST(
+            master_agent_1.AXI4_WRITE_BURST(
                 id,
                 physical_pointer, // 在范围内的地址
                 len,
@@ -1058,7 +1061,7 @@ module dbchecker_sim_tb();
             
             // 测试另一条DBTE Cache碰撞的读操作
             physical_pointer = {16'h21, 48'h4000_0000}; // 使用相同的DBTE Cache索引
-            master_agent.AXI4_WRITE_BURST(
+            master_agent_1.AXI4_WRITE_BURST(
                 id,
                 physical_pointer, // 在范围内的地址
                 len,
@@ -1164,8 +1167,8 @@ module dbchecker_sim_tb();
             
             // 尝试访问已释放的缓冲区（应该成功，因为检查被禁用）
             write_data = 64'hD1D1D1D1D1D1D1D1;
-            physical_pointer = {16'h0, 32'h4000_0000};
-            master_agent.AXI4_WRITE_BURST(
+            physical_pointer = {16'h0, 48'h4000_0000};
+            master_agent_1.AXI4_WRITE_BURST(
                 id,
                 physical_pointer + 32'h50, // 在范围内的地址
                 len,
