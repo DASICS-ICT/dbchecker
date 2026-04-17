@@ -18,6 +18,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   val refill_dbte_req_if = IO(Flipped(Decoupled(new DBCheckerDBTEReq)))
   val refill_dbte_rsp_if = IO(Decoupled(new DBCheckerDBTERsp))
   val m_axi_dbte   = IO(new AxiMaster(48, 128))
+  val perf_event   = IO(Input(new DBCheckerPerfEvent))
 
   val debug_if = IO(Output(UInt(128.W)))
 
@@ -70,6 +71,11 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
       when(index < RegNum.U && readAddrReg(1, 0) === 0.U) {
         // read logic
         s_axil.r.bits.data := regFile(index)
+        switch(index) {
+          is(chk_perf_hit.U)     { s_axil.r.bits.data := perf_hit_cnt }
+          is(chk_perf_miss.U)    { s_axil.r.bits.data := perf_miss_cnt }
+          is(chk_perf_penalty.U) { s_axil.r.bits.data := perf_penalty_cnt }
+        }
       }.otherwise {
         s_axil.r.bits.data := 0.U
         s_axil.r.bits.resp := 0.U // fake SLVERR for invalid address
@@ -296,4 +302,32 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   }
 
   debug_if := Cat(cmd_reg,err_info_reg,err_addr_hi_reg,err_addr_lo_reg) // reserved
+
+  // perf counters
+  val perf_hit_cnt     = RegInit(0.U(32.W))
+  val perf_miss_cnt    = RegInit(0.U(32.W))
+  val perf_penalty_cnt = RegInit(0.U(32.W))
+
+  def saturated(cnt: UInt): Bool = cnt(31, 16).andR
+
+  when(!saturated(perf_hit_cnt) && perf_event.hit) {
+    perf_hit_cnt := perf_hit_cnt + 1.U
+  }
+  when(!saturated(perf_miss_cnt) && perf_event.miss) {
+    perf_miss_cnt := perf_miss_cnt + 1.U
+  }
+  when(!saturated(perf_penalty_cnt) && perf_event.penalty) {
+    perf_penalty_cnt := perf_penalty_cnt + 1.U
+  }
+
+  // soft reset perf counters when chk_en is written with non-zero value
+  val wmask_perf = Cat((0 until 4).reverse.map(i => Fill(8, writeStrbReg(i))))
+  val chk_en_write_nonzero = (state === AXILiteState.writeData) &&
+                             (writeAddrReg(log2Up(RegNum) + 1, 2) === chk_en.U) &&
+                             ((writeDataReg & wmask_perf) =/= 0.U)
+  when(chk_en_write_nonzero) {
+    perf_hit_cnt     := 0.U
+    perf_miss_cnt    := 0.U
+    perf_penalty_cnt := 0.U
+  }
 }
