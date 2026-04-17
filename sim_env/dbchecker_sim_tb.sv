@@ -1194,6 +1194,15 @@ module dbchecker_sim_tb();
                 test_fail_count++;
             end
 
+            // --- 重新填充被test_free_operation覆盖的index 0 metadata ---
+            // 利用index 0x10的metadata (dev_id=1, bounds覆盖dbte_mb, w=1)
+            // 使用id=16使id(4)=1匹配dev_id，避免dev_err导致地址重定向
+            test_metadata = {4'h0, 20'b0, 1'b1, 1'b1, 1'b0, 5'h1, 48'h4000_0040, 48'h4000_0000};
+            master_agent_1.AXI4_WRITE_BURST(
+                16, {16'h0010, dbte_mb}, len, size, burst, lock, cache, prot,
+                region, qos, awuser, test_metadata, write_wuser, resp
+            );
+
             // --- 场景1：首次访问未缓存index触发miss ---
             // free cache entry 0 先确保miss
             test_cmd = {1'b1, 1'b0, 13'b0, 1'b1, 16'h0}; // free all
