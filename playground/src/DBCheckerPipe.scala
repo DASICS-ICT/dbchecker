@@ -50,6 +50,7 @@ class DBCheckerPipeStage1 extends Module with DBCheckerConst { // readDBTE
   val dbte_sram_if = IO(Flipped(new MemoryReadPort(UInt(128.W), log2Up(dbte_num))))
   val dbte_refill_req_if = IO(Decoupled(new DBCheckerDBTEReq))
   val dbte_refill_rsp_if = IO(Flipped(Decoupled(new DBCheckerDBTERsp)))
+  val perf = IO(Output(new DBCheckerPerfEvent))
 
   val fsm_state = RegInit(DBCheckerFetchState.RREQ)
 
@@ -142,6 +143,21 @@ class DBCheckerPipeStage1 extends Module with DBCheckerConst { // readDBTE
     out_pipe.bits.err_req.addr := addr_ptr.asUInt
     out_pipe.bits.err_req.info := err_info.asUInt
   }
+
+  // perf events
+  perf.hit := fsm_state === DBCheckerFetchState.RREQ &&
+              !pipe_medium_reg.bypass && out_pipe.fire
+
+  val miss_pulse = dbte_refill_req_if.valid && !RegNext(dbte_refill_req_if.valid, false.B)
+  perf.miss := miss_pulse
+
+  val miss_inflight = RegInit(false.B)
+  when(miss_pulse) {
+    miss_inflight := true.B
+  }.elsewhen(fsm_state === DBCheckerFetchState.RRSP && dbte_refill_rsp_if.valid) {
+    miss_inflight := false.B
+  }
+  perf.penalty := miss_inflight
 
 }
 
@@ -344,6 +360,7 @@ class DBCheckerPipeline extends Module with DBCheckerConst {
   val refill_dbte_req_if = IO(Decoupled(new DBCheckerDBTEReq))
   val refill_dbte_rsp_if = IO(Flipped(Decoupled(new DBCheckerDBTERsp)))
   val debug_if     = IO(Output(UInt(128.W)))
+  val perf         = IO(Output(new DBCheckerPerfEvent))
 
   err_req_w <> DontCare
 //frontend
@@ -383,4 +400,5 @@ class DBCheckerPipeline extends Module with DBCheckerConst {
   stage4w.m_b_chan <> m_axi_io_rx.b
 
   debug_if := stage3.debug_dbte.asUInt
+  perf     := stage1.perf
 }
