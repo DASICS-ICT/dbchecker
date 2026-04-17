@@ -34,6 +34,12 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   val writeAddrReg = RegInit(0.U(32.W))
   val writeDataReg = RegInit(0.U(32.W))
   val writeStrbReg = RegInit(0.U(4.W))
+
+  // perf counters (declared early for use in readData state)
+  val perf_hit_cnt     = RegInit(0.U(32.W))
+  val perf_miss_cnt    = RegInit(0.U(32.W))
+  val perf_penalty_cnt = RegInit(0.U(32.W))
+
   // Default outputs
   s_axil.aw.ready    := false.B
   s_axil.w.ready     := false.B
@@ -303,11 +309,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
 
   debug_if := Cat(cmd_reg,err_info_reg,err_addr_hi_reg,err_addr_lo_reg) // reserved
 
-  // perf counters
-  val perf_hit_cnt     = RegInit(0.U(32.W))
-  val perf_miss_cnt    = RegInit(0.U(32.W))
-  val perf_penalty_cnt = RegInit(0.U(32.W))
-
+  // perf counter logic
   def saturated(cnt: UInt): Bool = cnt(31, 16).andR
 
   when(!saturated(perf_hit_cnt) && perf_event.hit) {
