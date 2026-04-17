@@ -17,6 +17,9 @@ module dbchecker_sim_tb();
     localparam reg_chk_err_addr_hi = 32'h0000_0014;      // reg 5
     localparam reg_chk_err_info = 32'h0000_0018;      // reg 6
     localparam reg_chk_err_cnt = 32'h0000_001C;       // reg 7
+    localparam reg_chk_perf_hit     = 32'h0000_0020;  // reg 8
+    localparam reg_chk_perf_miss    = 32'h0000_0024;  // reg 9
+    localparam reg_chk_perf_penalty = 32'h0000_0028;  // reg 10
     localparam dbte_mb = 48'h4000_2000;
     localparam dbte_len = 128;
     
@@ -140,7 +143,10 @@ module dbchecker_sim_tb();
         
         // 测试用例: 测试错误计数器
         test_error_counters();
-        
+
+        // 测试用例: 测试性能计数器
+        test_perf_counters();
+
         // 测试用例: 测试禁用DBChecker
         test_disable_checker();
 
@@ -1142,6 +1148,177 @@ module dbchecker_sim_tb();
                 $display("ERROR: Error counters not cleared: 0x%0h", err_cnt);
                 test_fail_count++;
             end
+        end
+    endtask
+
+    // 任务: 测试性能计数器
+    task test_perf_counters();
+        bit [31:0] perf_hit, perf_miss, perf_penalty;
+        bit [31:0] perf_hit2, perf_miss2, perf_penalty2;
+        begin
+            $display("Test P: Performance Counters");
+
+            // --- 前置：启用checker并清零perf计数器 ---
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_chk_en,
+                0,
+                32'h0000_0003, // 写非零值，触发perf计数器软复位
+                resp
+            );
+
+            // 设置DBTE内存基址
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_dbte_mb_lo,
+                0,
+                dbte_mb[31:0],
+                resp
+            );
+            ctrl_agent.AXI4LITE_WRITE_BURST(
+                reg_base + reg_dbte_mb_hi,
+                0,
+                dbte_mb[47:32],
+                resp
+            );
+
+            // 验证perf计数器已清零（场景5：chk_en软复位）
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_hit,     0, perf_hit,     resp);
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_miss,    0, perf_miss,    resp);
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_penalty, 0, perf_penalty, resp);
+
+            if (perf_hit == 0 && perf_miss == 0 && perf_penalty == 0) begin
+                $display("Scenario 5 PASS: perf counters reset to 0 after chk_en write");
+                test_pass_count++;
+            end else begin
+                $display("ERROR Scenario 5: perf counters not zero after reset: hit=%0d miss=%0d penalty=%0d",
+                         perf_hit, perf_miss, perf_penalty);
+                test_fail_count++;
+            end
+
+            // --- 场景1：首次访问未缓存index触发miss ---
+            // free cache entry 0 先确保miss
+            test_cmd = {1'b1, 1'b0, 13'b0, 1'b1, 16'h0}; // free all
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_cmd, 0, test_cmd, resp);
+            #200ns;
+
+            // 重新写chk_en清零perf计数器
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h0000_0003, resp);
+
+            // 访问index 0x0，cache已被清空，应触发refill (miss)
+            physical_pointer = {16'h0, 48'h4000_0000};
+            write_data = 64'hABCDABCDABCDABCD;
+            master_agent_1.AXI4_WRITE_BURST(
+                id, physical_pointer, len, size, burst, lock, cache, prot,
+                region, qos, awuser, write_data, write_wuser, resp
+            );
+
+            #100ns;
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_miss,    0, perf_miss,    resp);
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_penalty, 0, perf_penalty, resp);
+
+            if (perf_miss >= 1) begin
+                $display("Scenario 1 PASS: miss_cnt=%0d after first access (expected >= 1)", perf_miss);
+                test_pass_count++;
+            end else begin
+                $display("ERROR Scenario 1: miss_cnt=%0d, expected >= 1", perf_miss);
+                test_fail_count++;
+            end
+
+            if (perf_penalty > 0) begin
+                $display("Scenario 1 PASS: penalty=%0d > 0", perf_penalty);
+                test_pass_count++;
+            end else begin
+                $display("ERROR Scenario 1: penalty=%0d, expected > 0", perf_penalty);
+                test_fail_count++;
+            end
+
+            // --- 场景2：同一index再次访问走cache hit ---
+            master_agent_1.AXI4_WRITE_BURST(
+                id, physical_pointer, len, size, burst, lock, cache, prot,
+                region, qos, awuser, write_data, write_wuser, resp
+            );
+
+            #100ns;
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_hit, 0, perf_hit, resp);
+
+            if (perf_hit >= 1) begin
+                $display("Scenario 2 PASS: hit_cnt=%0d after cached access (expected >= 1)", perf_hit);
+                test_pass_count++;
+            end else begin
+                $display("ERROR Scenario 2: hit_cnt=%0d, expected >= 1", perf_hit);
+                test_fail_count++;
+            end
+
+            // --- 场景3：连续不同index的miss，验证累积 ---
+            // 记录当前值
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_miss,    0, perf_miss,    resp);
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_penalty, 0, perf_penalty, resp);
+
+            // 访问index 0x10（cache已被free all清空，需要refill）
+            physical_pointer = {16'h0010, 48'h4000_7fc0};
+            master_agent_1.AXI4_READ_BURST(
+                id, physical_pointer, len, size, burst, lock, cache, prot,
+                region, qos, aruser, read_data, read_resp, read_ruser
+            );
+
+            // 访问index 0x20（也需要refill）
+            physical_pointer = {16'h0020, 48'h4000_0000};
+            master_agent_1.AXI4_WRITE_BURST(
+                id, physical_pointer, len, size, burst, lock, cache, prot,
+                region, qos, awuser, write_data, write_wuser, resp
+            );
+
+            #100ns;
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_miss,    0, perf_miss2,    resp);
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_penalty, 0, perf_penalty2, resp);
+
+            if (perf_miss2 >= perf_miss + 2) begin
+                $display("Scenario 3 PASS: miss_cnt accumulated %0d -> %0d (expected +2)", perf_miss, perf_miss2);
+                test_pass_count++;
+            end else begin
+                $display("ERROR Scenario 3: miss_cnt %0d -> %0d, expected increase by >= 2", perf_miss, perf_miss2);
+                test_fail_count++;
+            end
+
+            if (perf_penalty2 > perf_penalty) begin
+                $display("Scenario 3 PASS: penalty accumulated %0d -> %0d", perf_penalty, perf_penalty2);
+                test_pass_count++;
+            end else begin
+                $display("ERROR Scenario 3: penalty not accumulated %0d -> %0d", perf_penalty, perf_penalty2);
+                test_fail_count++;
+            end
+
+            // --- 场景4：bypass场景不计数 ---
+            // 记录当前值
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_hit,     0, perf_hit,     resp);
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_miss,    0, perf_miss,    resp);
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_penalty, 0, perf_penalty, resp);
+
+            // 禁用dev_id 0的checker（写chk_en为0不会触发perf复位，因为值为0）
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h0000_0000, resp);
+
+            // 发起访问，此时应bypass
+            physical_pointer = {16'h0, 48'h4000_0000};
+            master_agent_1.AXI4_WRITE_BURST(
+                id, physical_pointer, len, size, burst, lock, cache, prot,
+                region, qos, awuser, write_data, write_wuser, resp
+            );
+
+            #100ns;
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_hit,     0, perf_hit2,     resp);
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_miss,    0, perf_miss2,    resp);
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_penalty, 0, perf_penalty2, resp);
+
+            if (perf_hit2 == perf_hit && perf_miss2 == perf_miss && perf_penalty2 == perf_penalty) begin
+                $display("Scenario 4 PASS: bypass access did not change perf counters");
+                test_pass_count++;
+            end else begin
+                $display("ERROR Scenario 4: bypass changed counters: hit %0d->%0d miss %0d->%0d penalty %0d->%0d",
+                         perf_hit, perf_hit2, perf_miss, perf_miss2, perf_penalty, perf_penalty2);
+                test_fail_count++;
+            end
+
+            // 重新启用checker
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h0000_0003, resp);
         end
     endtask
 
