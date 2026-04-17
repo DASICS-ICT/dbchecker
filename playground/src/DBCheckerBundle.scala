@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.util._
 import axi._
 trait DBCheckerConst {
-  val RegNum    = 8
+  val RegNum    = 16
   val dbte_num  = 4096
 
   // reg index (actual addr is 4 byte aligned, r/w lo-hi)
@@ -31,6 +31,11 @@ trait DBCheckerConst {
 
   // checker error counter register (0x7, RO)
   val chk_err_cnt     = 0x7 // 0x1C
+
+  // performance counter registers (RO)
+  val chk_perf_hit     = 0x8 // 0x20
+  val chk_perf_miss    = 0x9 // 0x24
+  val chk_perf_penalty = 0xA // 0x28
 
 
   def cmd_op_free    = 0.U(1.W)
@@ -129,4 +134,10 @@ object DBCheckerFetchState extends ChiselEnum {
 }
 object DBCheckerRefillState extends ChiselEnum {
   val AR, R, WB = Value
+}
+
+class DBCheckerPerfEvent extends Bundle {
+  val hit     = Bool()
+  val miss    = Bool()
+  val penalty = Bool()
 }
