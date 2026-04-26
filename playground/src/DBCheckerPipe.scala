@@ -316,17 +316,51 @@ class DBCheckerPipeStage4R extends Module with DBCheckerConst { // Return_R
 
   in_pipe.ready := !pipe_v_reg || transfer_done
 
-  // --- Auto-Release CAM interface (driven to defaults, wired in commit 5) ---
-  rd_active_index   := 0.U
-  rd_ar_fire        := false.B
-  rd_should_track   := false.B
-  rd_target         := 0.U
-  rd_beat_bytes     := 0.U
-  rd_beat_fire      := false.B
-  rd_active_slot    := 0.U
-  rd_slot_valid_out := false.B
+  // --- Auto-Release: active read latch ---
+  val active_rd_dbte_index = Reg(UInt(16.W))
+  val active_rd_valid      = RegInit(false.B)
+  val active_rd_should_track = Reg(Bool())
+  val active_rd_target     = Reg(UInt(48.W))
+  val active_rd_beat_bytes = Reg(UInt(8.W))
+  val active_rd_slot       = Reg(UInt(7.W))
+  val active_rd_slot_valid = RegInit(false.B)
 
-  // Auto-clear request to pipeline (wired in commit 5)
+  val dbte_mtdt = pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt)
+  val ar_fire   = m_ar_chan.fire
+
+  when(ar_fire) {
+    active_rd_dbte_index   := pipe_medium_reg.axi_a.addr(63, 48)
+    active_rd_valid        := true.B
+    active_rd_should_track := !pipe_medium_reg.bypass &&
+                              !pipe_medium_reg.err_v &&
+                              dbte_mtdt.auto_rel_en
+    active_rd_target       := dbte_mtdt.bnd_hi - dbte_mtdt.bnd_lo
+    active_rd_beat_bytes   := (1.U << pipe_medium_reg.axi_a.size)(7, 0)
+    active_rd_slot         := rd_slot_id
+  }
+
+  when(rd_slot_valid) {
+    active_rd_slot_valid := true.B
+  }
+
+  // Cleared on last R beat (rlast && m_r_chan.fire)
+  val r_beat_fire = m_r_chan.valid && m_r_chan.ready
+  when(r_beat_fire && m_r_chan.bits.last) {
+    active_rd_valid      := false.B
+    active_rd_slot_valid := false.B
+  }
+
+  // Connect active state to pipeline body
+  rd_active_index   := active_rd_dbte_index
+  rd_ar_fire        := ar_fire
+  rd_should_track   := active_rd_should_track
+  rd_target         := active_rd_target
+  rd_beat_bytes     := active_rd_beat_bytes
+  rd_beat_fire      := r_beat_fire && active_rd_valid && active_rd_should_track
+  rd_active_slot    := active_rd_slot
+  rd_slot_valid_out := active_rd_slot_valid
+
+  // Auto-clear request to pipeline (wired in commit 6)
   auto_clear_req.valid := false.B
   auto_clear_req.bits  := 0.U.asTypeOf(new AutoClearReq)
 }
