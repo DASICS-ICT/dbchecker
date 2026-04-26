@@ -47,6 +47,25 @@ class DBChecker extends Module with DBCheckerConst {
   ctrl.refill_dbte_rsp_if <> handler.refill_dbte_rsp_if
   ctrl.perf_event := handler.perf
 
+  // CAM interface wiring: ctrl <-> pipeline
+  ctrl.cam_lookup_key   := handler.cam_lookup_key
+  handler.cam_lookup_valid := ctrl.cam_lookup_valid
+  handler.cam_lookup_id    := ctrl.cam_lookup_id
+  ctrl.cam_insert_key   := handler.cam_insert_key
+  ctrl.cam_insert_valid := handler.cam_insert_valid
+  handler.cam_insert_id    := ctrl.cam_insert_id
+  ctrl.cam_remove_key   := handler.cam_remove_key
+  ctrl.cam_remove_valid := handler.cam_remove_valid
+  ctrl.cam_counter_slot   := handler.cam_counter_slot
+  ctrl.cam_counter_bytes  := handler.cam_counter_bytes
+  ctrl.cam_counter_update := handler.cam_counter_update
+  handler.cam_auto_clear  := ctrl.cam_auto_clear
+  handler.cam_used_slots  := ctrl.cam_used_slots
+  handler.cam_full        := ctrl.cam_full
+
+  // auto_clear_req: pipeline -> ctrl (wired in commit 6)
+  ctrl.auto_clear_req <> handler.auto_clear_req
+
   debug_if.ctrl := ctrl.debug_if
   debug_if.flow := handler.debug_if
 }

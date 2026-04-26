@@ -362,6 +362,25 @@ class DBCheckerPipeline extends Module with DBCheckerConst {
   val debug_if     = IO(Output(UInt(128.W)))
   val perf         = IO(Output(new DBCheckerPerfEvent))
 
+  // CAM interface (passthrough to/from DBCheckerCtrl)
+  val cam_lookup_key   = IO(Output(UInt(16.W)))
+  val cam_lookup_valid = IO(Input(Bool()))
+  val cam_lookup_id    = IO(Input(UInt(7.W)))
+  val cam_insert_key   = IO(Output(UInt(16.W)))
+  val cam_insert_valid = IO(Output(Bool()))
+  val cam_insert_id    = IO(Input(UInt(7.W)))
+  val cam_remove_key   = IO(Output(UInt(16.W)))
+  val cam_remove_valid = IO(Output(Bool()))
+  val cam_counter_slot   = IO(Output(UInt(7.W)))
+  val cam_counter_bytes  = IO(Output(UInt(8.W)))
+  val cam_counter_update = IO(Output(Bool()))
+  val cam_auto_clear     = IO(Input(Bool()))
+  val cam_used_slots     = IO(Input(UInt(8.W)))
+  val cam_full           = IO(Input(Bool()))
+
+  // Auto-clear request to Ctrl FSM
+  val auto_clear_req = IO(Decoupled(new AutoClearReq))
+
   err_req_w <> DontCare
 //frontend
   val stage0  = Module(new DBCheckerPipeStage0)
@@ -398,6 +417,19 @@ class DBCheckerPipeline extends Module with DBCheckerConst {
   stage4w.m_aw_chan <> m_axi_io_rx.aw
   stage4w.m_w_chan <> m_axi_io_rx.w
   stage4w.m_b_chan <> m_axi_io_rx.b
+
+  // CAM IO: tied off in commit 3, wired in commits 4-5
+  cam_lookup_key   := 0.U
+  cam_insert_key   := 0.U
+  cam_insert_valid := false.B
+  cam_remove_key   := 0.U
+  cam_remove_valid := false.B
+  cam_counter_slot   := 0.U
+  cam_counter_bytes  := 0.U
+  cam_counter_update := false.B
+
+  auto_clear_req.valid := false.B
+  auto_clear_req.bits  := 0.U.asTypeOf(new AutoClearReq)
 
   debug_if := stage3.debug_dbte.asUInt
   perf     := stage1.perf
