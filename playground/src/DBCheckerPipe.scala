@@ -268,11 +268,25 @@ class DBCheckerPipeStage4R extends Module with DBCheckerConst { // Return_R
   val m_ar_chan = IO(Decoupled(new AxiAddr(64, idWidth = 5)))
   val m_r_chan  = IO(Flipped(Decoupled(new AxiReadData(128, idWidth = 5))))
 
+  // Auto-Release CAM/counter interface
+  val rd_active_index   = IO(Output(UInt(16.W)))
+  val rd_ar_fire        = IO(Output(Bool()))
+  val rd_should_track   = IO(Output(Bool()))
+  val rd_target         = IO(Output(UInt(48.W)))
+  val rd_beat_bytes     = IO(Output(UInt(8.W)))
+  val rd_beat_fire      = IO(Output(Bool()))
+  val rd_slot_id        = IO(Input(UInt(7.W)))
+  val rd_slot_valid     = IO(Input(Bool()))
+  val rd_auto_clear     = IO(Input(Bool()))
+  val rd_active_slot    = IO(Output(UInt(7.W)))
+  val rd_slot_valid_out = IO(Output(Bool()))
+  val auto_clear_req    = IO(Decoupled(new AutoClearReq))
+
   val pipe_medium_reg = RegInit(0.U.asTypeOf(new DBCheckerPipeMedium))
   val pipe_v_reg      = RegInit(false.B)
   val ar_release_reg  = RegInit(false.B)
   val transfer_done   = WireInit(false.B)
-  val beat_cnt        = Reg(UInt(8.W)) 
+  val beat_cnt        = Reg(UInt(8.W))
 
   m_ar_chan.valid := false.B
 
@@ -301,6 +315,20 @@ class DBCheckerPipeStage4R extends Module with DBCheckerConst { // Return_R
   }
 
   in_pipe.ready := !pipe_v_reg || transfer_done
+
+  // --- Auto-Release CAM interface (driven to defaults, wired in commit 5) ---
+  rd_active_index   := 0.U
+  rd_ar_fire        := false.B
+  rd_should_track   := false.B
+  rd_target         := 0.U
+  rd_beat_bytes     := 0.U
+  rd_beat_fire      := false.B
+  rd_active_slot    := 0.U
+  rd_slot_valid_out := false.B
+
+  // Auto-clear request to pipeline (wired in commit 5)
+  auto_clear_req.valid := false.B
+  auto_clear_req.bits  := 0.U.asTypeOf(new AutoClearReq)
 }
 
 class DBCheckerPipeStage4W extends Module with DBCheckerConst { // Return_W
@@ -311,6 +339,19 @@ class DBCheckerPipeStage4W extends Module with DBCheckerConst { // Return_W
   val m_aw_chan = IO(Decoupled(new AxiAddr(64, idWidth = 5)))
   val m_w_chan  = IO(Decoupled(new AxiWriteData(128)))
   val m_b_chan  = IO(Flipped(Decoupled(new AxiWriteResp(idWidth = 5))))
+
+  // Auto-Release CAM/counter interface
+  val wr_active_index = IO(Output(UInt(16.W)))
+  val wr_aw_fire      = IO(Output(Bool()))
+  val wr_should_track = IO(Output(Bool()))
+  val wr_target       = IO(Output(UInt(48.W)))
+  val wr_beat_bytes   = IO(Output(UInt(8.W)))
+  val wr_beat_fire    = IO(Output(Bool()))
+  val wr_slot_id      = IO(Input(UInt(7.W)))
+  val wr_slot_valid   = IO(Input(Bool()))
+  val wr_auto_clear   = IO(Input(Bool()))
+  val wr_active_slot  = IO(Output(UInt(7.W)))
+  val auto_clear_req  = IO(Decoupled(new AutoClearReq))
 
   val pipe_medium_reg = RegInit(0.U.asTypeOf(new DBCheckerPipeMedium))
   val pipe_v_reg      = RegInit(false.B)
@@ -341,12 +382,71 @@ class DBCheckerPipeStage4W extends Module with DBCheckerConst { // Return_W
   }
 
   m_aw_chan.valid     := aw_release_reg
-  
+
   when(m_aw_chan.fire) {
     transfer_done := true.B
   }
 
   in_pipe.ready := !pipe_v_reg || transfer_done
+
+  // --- Auto-Release: active write latch ---
+  val active_wr_dbte_index = Reg(UInt(16.W))
+  val active_wr_valid      = RegInit(false.B)
+  val active_wr_should_track = Reg(Bool())
+  val active_wr_target     = Reg(UInt(48.W))
+  val active_wr_beat_bytes = Reg(UInt(8.W))
+  val active_wr_slot       = Reg(UInt(7.W))
+  val active_wr_slot_valid = RegInit(false.B)
+
+  val dbte_mtdt = pipe_medium_reg.dbte.asTypeOf(new DBCheckerMtdt)
+  val aw_fire   = m_aw_chan.fire
+
+  when(aw_fire) {
+    active_wr_dbte_index   := pipe_medium_reg.axi_a.addr(63, 48)
+    active_wr_valid        := true.B
+    active_wr_should_track := !pipe_medium_reg.bypass &&
+                              !pipe_medium_reg.err_v &&
+                              dbte_mtdt.auto_rel_en
+    active_wr_target       := dbte_mtdt.bnd_hi - dbte_mtdt.bnd_lo
+    active_wr_beat_bytes   := (1.U << pipe_medium_reg.axi_a.size)(7, 0)
+    active_wr_slot         := wr_slot_id
+  }
+
+  when(m_b_chan.fire) {
+    active_wr_valid      := false.B
+    active_wr_slot_valid := false.B
+  }
+
+  // Tap W passthrough: observe beats without breaking passthrough
+  val w_beat_fire = m_w_chan.valid && m_w_chan.ready
+
+  wr_active_index := active_wr_dbte_index
+  wr_aw_fire      := aw_fire
+  wr_should_track := active_wr_should_track
+  wr_target       := active_wr_target
+  wr_beat_bytes   := active_wr_beat_bytes
+  wr_beat_fire    := w_beat_fire && active_wr_valid && active_wr_should_track
+  wr_active_slot  := active_wr_slot
+
+  // slot_valid is driven by pipeline body; register it locally
+  when(wr_slot_valid) {
+    active_wr_slot_valid := true.B
+  }
+
+  // Auto-clear request to pipeline (asserted for 1 cycle on match)
+  val auto_clear_pending = RegInit(false.B)
+
+  when(wr_beat_fire && active_wr_slot_valid && wr_auto_clear && !auto_clear_pending) {
+    auto_clear_pending := true.B
+  }
+
+  auto_clear_req.valid := auto_clear_pending
+  auto_clear_req.bits.index        := active_wr_dbte_index
+  auto_clear_req.bits.index_offset := active_wr_dbte_index(3, 0)
+
+  when(auto_clear_req.fire) {
+    auto_clear_pending := false.B
+  }
 }
 
 class DBCheckerPipeline extends Module with DBCheckerConst {
@@ -418,18 +518,62 @@ class DBCheckerPipeline extends Module with DBCheckerConst {
   stage4w.m_w_chan <> m_axi_io_rx.w
   stage4w.m_b_chan <> m_axi_io_rx.b
 
-  // CAM IO: tied off in commit 3, wired in commits 4-5
-  cam_lookup_key   := 0.U
-  cam_insert_key   := 0.U
-  cam_insert_valid := false.B
+  // --- CAM access muxing between Stage4W and Stage4R ---
+  // W channel has priority for CAM/counter access
+
+  // CAM lookup/insert on AW/AR fire (W priority)
+  val cam_lookup_sel = Wire(UInt(16.W))
+  val cam_insert_sel = Wire(UInt(16.W))
+  val do_cam_insert   = Wire(Bool())
+
+  when(stage4w.wr_aw_fire && stage4w.wr_should_track) {
+    cam_lookup_sel := stage4w.wr_active_index
+    cam_insert_sel := stage4w.wr_active_index
+    do_cam_insert  := !cam_lookup_valid
+  }.elsewhen(stage4r.rd_ar_fire && stage4r.rd_should_track) {
+    cam_lookup_sel := stage4r.rd_active_index
+    cam_insert_sel := stage4r.rd_active_index
+    do_cam_insert  := !cam_lookup_valid
+  }.otherwise {
+    cam_lookup_sel := 0.U
+    cam_insert_sel := 0.U
+    do_cam_insert  := false.B
+  }
+
+  cam_lookup_key   := cam_lookup_sel
+  cam_insert_key   := cam_insert_sel
+  cam_insert_valid := do_cam_insert
   cam_remove_key   := 0.U
   cam_remove_valid := false.B
+
+  // Drive slot allocation back to stages
+  stage4w.wr_slot_id    := Mux(cam_lookup_valid, cam_lookup_id, cam_insert_id)
+  stage4w.wr_slot_valid := stage4w.wr_aw_fire && stage4w.wr_should_track
+  stage4r.rd_slot_id    := Mux(cam_lookup_valid, cam_lookup_id, cam_insert_id)
+  stage4r.rd_slot_valid := stage4r.rd_ar_fire && stage4r.rd_should_track && !(stage4w.wr_aw_fire && stage4w.wr_should_track)
+
+  // Counter update on beat fire (W priority)
   cam_counter_slot   := 0.U
   cam_counter_bytes  := 0.U
   cam_counter_update := false.B
+  when(stage4w.wr_beat_fire) {
+    cam_counter_slot   := stage4w.wr_active_slot
+    cam_counter_bytes  := stage4w.wr_beat_bytes
+    cam_counter_update := true.B
+  }.elsewhen(stage4r.rd_beat_fire) {
+    cam_counter_slot   := stage4r.rd_active_slot
+    cam_counter_bytes  := stage4r.rd_beat_bytes
+    cam_counter_update := true.B
+  }
 
-  auto_clear_req.valid := false.B
-  auto_clear_req.bits  := 0.U.asTypeOf(new AutoClearReq)
+  // Auto-clear feedback to stages
+  stage4w.wr_auto_clear := cam_auto_clear && stage4w.wr_beat_fire
+  stage4r.rd_auto_clear := cam_auto_clear && stage4r.rd_beat_fire && !stage4w.wr_beat_fire
+
+  // auto_clear_req from Stage4W to ctrl
+  auto_clear_req <> stage4w.auto_clear_req
+  // Stage4R auto_clear_req not used yet (commit 5)
+  stage4r.auto_clear_req.ready := false.B
 
   debug_if := stage3.debug_dbte.asUInt
   perf     := stage1.perf
