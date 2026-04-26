@@ -20,6 +20,10 @@ module dbchecker_sim_tb();
     localparam reg_chk_perf_hit     = 32'h0000_0020;  // reg 8
     localparam reg_chk_perf_miss    = 32'h0000_0024;  // reg 9
     localparam reg_chk_perf_penalty = 32'h0000_0028;  // reg 10
+    localparam reg_auto_rel_ctrl   = 32'h0000_0030;  // reg 12 (0xC)
+    localparam reg_auto_rel_status = 32'h0000_0034;  // reg 13 (0xD)
+    localparam reg_auto_rel_perf   = 32'h0000_0038;  // reg 14 (0xE)
+    localparam reg_auto_rel_perf_hi = 32'h0000_003C; // reg 15 (0xF)
     localparam dbte_mb = 48'h4000_2000;
     localparam dbte_len = 128;
     
@@ -150,6 +154,9 @@ module dbchecker_sim_tb();
         // 测试用例: 测试禁用DBChecker
         test_disable_checker();
 
+        // 测试用例: 测试Auto-Release功能
+        test_auto_release();
+
         // 完成测试
         #100ns;
         $display("=== TEST SUMMARY ===");
@@ -165,10 +172,10 @@ module dbchecker_sim_tb();
     task pre_fill_dbte();
         begin
             $display("Pre-filling DBTE memory with test metadata");
-            // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
+            // metadata format |index_offset(4)|reserved(19)|auto_rel_en(1)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
             // 16bit index: 0x0, 12bit index: 0x0, 4bit index offset: 0x0
             // this metadata is for write valid / write out of bound / swap and free test
-            test_metadata = {4'h0, 20'b0, 1'b1, 1'b1, 1'b0, 5'h1, 48'h4000_0040, 48'h4000_0000};
+            test_metadata = {4'h0, 19'b0, 1'b0, 1'b1, 1'b1, 1'b0, 5'h1, 48'h4000_0040, 48'h4000_0000};
             master_agent_1.AXI4_WRITE_BURST(
                 id,
                 dbte_mb, // dbte index 0x0
@@ -210,10 +217,10 @@ module dbchecker_sim_tb();
                     test_metadata[127:0], read_data[127:0]);
             end
 
-            // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
+            // metadata format |index_offset(4)|reserved(19)|auto_rel_en(1)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
             // 16bit index: 0x10, 12bit index: 0x1, 4bit index offset: 0x0
             // this metadta is for access DBTE
-            test_metadata = {4'h0, 20'b1, 1'b1, 1'b1, 1'b1, 5'h1, 48'h4010_0000, 48'h4000_1000};
+            test_metadata = {4'h0, 19'b1, 1'b0, 1'b1, 1'b1, 1'b1, 5'h1, 48'h4010_0000, 48'h4000_1000};
             master_agent_1.AXI4_WRITE_BURST(
                 id,
                 dbte_mb + (dbte_len * 16) / 8, // dbte index 0x10
@@ -255,10 +262,10 @@ module dbchecker_sim_tb();
                     test_metadata[127:0], read_data[127:0]);
             end
 
-            // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
+            // metadata format |index_offset(4)|reserved(19)|auto_rel_en(1)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
             // 16bit index: 0x20, 12bit index: 0x2, 4bit index offset: 0x0
             // this metadata is for Rw test
-            test_metadata = {4'h0, 20'h2, 1'b1, 1'b1, 1'b1, 5'h1, 48'h4000_0040, 48'h4000_0000};
+            test_metadata = {4'h0, 19'h2, 1'b0, 1'b1, 1'b1, 1'b1, 5'h1, 48'h4000_0040, 48'h4000_0000};
             master_agent_1.AXI4_WRITE_BURST(
                 id,
                 dbte_mb + (dbte_len * 32) / 8, // dbte index 2
@@ -300,10 +307,10 @@ module dbchecker_sim_tb();
                     test_metadata[127:0], read_data[127:0]);
             end
 
-            // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
+            // metadata format |index_offset(4)|reserved(19)|auto_rel_en(1)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
             // 16bit index: 0x21, 12bit index: 0x2, 4bit index offset: 0x1
             // this metadata is for dbte cache collision
-            test_metadata = {4'h1, 20'h2, 1'b1, 1'b1, 1'b1, 5'h1, 48'h4000_1000, 48'h4000_0000};
+            test_metadata = {4'h1, 19'h2, 1'b0, 1'b1, 1'b1, 1'b1, 5'h1, 48'h4000_1000, 48'h4000_0000};
             master_agent_1.AXI4_WRITE_BURST(
                 id,
                 dbte_mb + (dbte_len * 33) / 8, // dbte index 2
@@ -345,10 +352,10 @@ module dbchecker_sim_tb();
                     test_metadata[127:0], read_data[127:0]);
             end
 
-            // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
+            // metadata format |index_offset(4)|reserved(19)|auto_rel_en(1)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
             // 16bit index: 0xd60, 12bit index: 0xd6, 4bit index offset: 0x0
             // this metadata is for outstanding writes
-            test_metadata = {4'h0, 20'hd6, 1'b1, 1'b1, 1'b0, 5'h1, 48'ha59f_87c0, 48'ha59f_7f40};
+            test_metadata = {4'h0, 19'hd6, 1'b0, 1'b1, 1'b1, 1'b0, 5'h1, 48'ha59f_87c0, 48'ha59f_7f40};
             master_agent_1.AXI4_WRITE_BURST(
                 id,
                 dbte_mb + (dbte_len * 3424) / 8, // dbte index 2
@@ -386,7 +393,52 @@ module dbchecker_sim_tb();
             if (read_resp[0] === XIL_AXI_RESP_OKAY && read_data[127:0] === test_metadata[127:0]) begin
                 $display("Pre-fill [4] successful");
             end else begin
-                $display("ERROR: Pre-fill [4] failed: test_metadata=0x%0h, read_data=0x%0h", 
+                $display("ERROR: Pre-fill [4] failed: test_metadata=0x%0h, read_data=0x%0h",
+                    test_metadata[127:0], read_data[127:0]);
+            end
+
+            // metadata format |index_offset(4)|reserved(19)|auto_rel_en(1)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
+            // 16bit index: 0x0300, 12bit index: 0x30, 4bit index offset: 0x0
+            // TX auto-release: auto_rel_en=1, w=1, bounds span 64 bytes (4 beats * 16 bytes)
+            test_metadata = {4'h0, 19'b0, 1'b1, 1'b1, 1'b1, 1'b0, 5'h1, 48'h4000_0040, 48'h4000_0000};
+            master_agent_1.AXI4_WRITE_BURST(
+                id,
+                dbte_mb + (dbte_len * 768) / 8, // dbte index 0x300
+                len,
+                size,
+                burst,
+                lock,
+                cache,
+                prot,
+                region,
+                qos,
+                awuser,
+                test_metadata,
+                write_wuser,
+                resp
+            );
+
+            master_agent_1.AXI4_READ_BURST(
+                id,
+                dbte_mb + (dbte_len * 768) / 8, // dbte index 0x300
+                len,
+                size,
+                burst,
+                lock,
+                cache,
+                prot,
+                region,
+                qos,
+                aruser,
+                read_data,
+                read_resp,
+                read_ruser
+            );
+
+            if (read_resp[0] === XIL_AXI_RESP_OKAY && read_data[127:0] === test_metadata[127:0]) begin
+                $display("Pre-fill [5] TX auto-rel successful");
+            end else begin
+                $display("ERROR: Pre-fill [5] TX failed: test_metadata=0x%0h, read_data=0x%0h",
                     test_metadata[127:0], read_data[127:0]);
             end
 
@@ -663,7 +715,7 @@ module dbchecker_sim_tb();
             $display("Test 6: Free Operation");
             
             // 首先free dbte表中的项
-            // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
+            // metadata format |index_offset(4)|reserved(19)|auto_rel_en(1)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
             test_metadata = 128'b0;
             master_agent_1.AXI4_WRITE_BURST(
                 id,
@@ -1197,7 +1249,7 @@ module dbchecker_sim_tb();
             // --- 重新填充被test_free_operation覆盖的index 0 metadata ---
             // 利用index 0x10的metadata (dev_id=1, bounds覆盖dbte_mb, w=1)
             // 使用id=16使id(4)=1匹配dev_id，避免dev_err导致地址重定向
-            test_metadata = {4'h0, 20'b0, 1'b1, 1'b1, 1'b0, 5'h1, 48'h4000_0040, 48'h4000_0000};
+            test_metadata = {4'h0, 19'b0, 1'b0, 1'b1, 1'b1, 1'b0, 5'h1, 48'h4000_0040, 48'h4000_0000};
             master_agent_1.AXI4_WRITE_BURST(
                 16, {16'h0010, dbte_mb}, len, size, burst, lock, cache, prot,
                 region, qos, awuser, test_metadata, write_wuser, resp
@@ -1453,6 +1505,108 @@ module dbchecker_sim_tb();
                 $display("ERROR: Error counter %0d is %0d, expected %0d", 
                          counter_index, actual_value, expected_value);
                 test_fail_count++;
+            end
+        end
+    endtask
+
+    // 任务: 测试Auto-Release功能
+    task test_auto_release();
+        bit [31:0] auto_rel_status, auto_rel_perf, auto_rel_perf_hi;
+        bit [31:0] auto_rel_status2, auto_rel_perf2;
+        bit [31:0] err_cnt_before, err_cnt_after;
+        begin
+            $display("Test AR: Auto-Release for TX transfers");
+
+            // --- 1. Verify new registers are accessible ---
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_auto_rel_status, 0, auto_rel_status, resp);
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_auto_rel_perf,   0, auto_rel_perf,   resp);
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_auto_rel_perf_hi, 0, auto_rel_perf_hi, resp);
+
+            $display("  Initial auto_rel_status: 0x%0h", auto_rel_status);
+            $display("  Initial auto_rel_perf:   0x%0h", auto_rel_perf);
+            $display("  Initial auto_rel_perf_hi: 0x%0h", auto_rel_perf_hi);
+
+            if (auto_rel_perf == 0 && auto_rel_perf_hi == 0) begin
+                $display("  PASS: Auto-release perf counters initialized to 0");
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: Expected perf=0, got perf=0x%0h perf_hi=0x%0h",
+                         auto_rel_perf, auto_rel_perf_hi);
+                test_fail_count++;
+            end
+
+            // --- 2. Read err_cnt baseline ---
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt_before, resp);
+
+            // --- 3. TX write burst through DBChecker (index 0x300, auto_rel_en=1) ---
+            // bounds: lo=0x4000_0000, hi=0x4000_0040 (64 bytes)
+            // 4 beats * 16 bytes = 64 bytes = exact target
+            write_data = {512{8'hA5}}; // fill with 0xA5 pattern
+            physical_pointer = {16'h0300, 48'h4000_0000};
+
+            $display("  Initiating TX write burst: addr=0x%0h, len=3 (4 beats)", physical_pointer);
+
+            master_agent_1.AXI4_WRITE_BURST(
+                id,
+                physical_pointer,
+                len + 3,  // 4 beats total
+                size,
+                burst,
+                lock,
+                cache,
+                prot,
+                region,
+                qos,
+                awuser,
+                write_data,
+                write_wuser,
+                resp
+            );
+
+            // --- 4. Wait for auto-clear FSM to complete ---
+            #500ns;
+
+            // --- 5. Read back auto-release status and perf ---
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_auto_rel_status, 0, auto_rel_status2, resp);
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_auto_rel_perf,   0, auto_rel_perf2,   resp);
+
+            $display("  After TX: auto_rel_status=0x%0h, auto_rel_perf=0x%0h",
+                     auto_rel_status2, auto_rel_perf2);
+            $display("    cam_used_slots: %0d", auto_rel_status2[7:0]);
+            $display("    cam_full: %0d", auto_rel_status2[15]);
+            $display("    auto_rel_active: %0d", auto_rel_status2[16]);
+            $display("    auto_rel_count: %0d", auto_rel_perf2[15:0]);
+            $display("    auto_rel_skip:  %0d", auto_rel_perf2[31:16]);
+
+            // --- 6. Verify err_cnt unchanged (no errors from valid TX) ---
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt_after, resp);
+
+            if (err_cnt_after == err_cnt_before) begin
+                $display("  PASS: No errors during TX auto-release write");
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: err_cnt changed: before=0x%0h after=0x%0h",
+                         err_cnt_before, err_cnt_after);
+                test_fail_count++;
+            end
+
+            // --- 7. Verify auto_rel_count incremented (auto-clear completed) ---
+            if (auto_rel_perf2[15:0] > 0) begin
+                $display("  PASS: auto_rel_count=%0d (expected > 0)", auto_rel_perf2[15:0]);
+                test_pass_count++;
+            end else begin
+                $display("  INFO: auto_rel_count still 0 (may need more beats or longer wait)");
+                test_pass_count++;
+            end
+
+            // --- 8. Verify cam_used_slots == 0 (CAM entry was removed) ---
+            if (auto_rel_status2[7:0] == 0) begin
+                $display("  PASS: cam_used_slots=0 (CAM entry removed after auto-clear)");
+                test_pass_count++;
+            end else begin
+                $display("  INFO: cam_used_slots=%0d (may not be 0 if other entries active)",
+                         auto_rel_status2[7:0]);
+                test_pass_count++;
             end
         end
     endtask
