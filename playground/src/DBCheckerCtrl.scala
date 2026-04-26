@@ -363,16 +363,58 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   cam.io.insert_key   := cam_insert_key
   cam.io.insert_valid := cam_insert_valid
   cam_insert_id       := cam.io.insert_id
-  cam.io.remove_key   := cam_remove_key
-  cam.io.remove_valid := cam_remove_valid
   cam.io.counter_slot   := cam_counter_slot
   cam.io.counter_bytes  := cam_counter_bytes
   cam.io.counter_update := cam_counter_update
   cam_auto_clear        := cam.io.auto_clear
-  cam.io.clear_all      := false.B  // wired in commit 6
   cam_used_slots        := cam.io.used_slots
   cam_full              := cam.io.cam_full
 
-  // auto_clear_req: wired in commit 6, tie off for now
+  // clear_all: wired from FREE clear_all command
+  cam.io.clear_all := cmd_reg_struct.v && cmd_reg_struct.op === cmd_op_free && cmd_reg_struct.imm(16)
+
+  // --- Auto-Clear FSM ---
+  val auto_clear_state = RegInit(AutoClearState.Idle)
+  val auto_clear_index = Reg(UInt(16.W))
+  val auto_clear_index_off = Reg(UInt(4.W))
+
+  // Default: pipeline drives remove; FSM overrides in Verify state
+  cam.io.remove_key   := cam_remove_key
+  cam.io.remove_valid := cam_remove_valid
+
+  // SRAM read arbitration: FREE has priority over auto-clear
+  // FREE uses dbte_sram_r when !free_sram_wait and dbte_v_bitmap set
+  val free_needs_sram = is_freeing && dbte_v_bitmap(cmd_reg_struct.get_index_hi) && !free_sram_wait
+  val ac_needs_sram   = auto_clear_state === AutoClearState.Idle && auto_clear_req.valid
+
+  when(ac_needs_sram && !free_needs_sram) {
+    dbte_sram_r.address := auto_clear_req.bits.index(15, 16 - log2Up(dbte_num))
+    dbte_sram_r.enable  := true.B
+  }
+
+  // Default: pipeline drives auto_clear_req (overridden in FSM states)
   auto_clear_req.ready := false.B
+
+  switch(auto_clear_state) {
+    is(AutoClearState.Idle) {
+      when(auto_clear_req.valid && !free_needs_sram) {
+        auto_clear_req.ready := true.B
+        auto_clear_index     := auto_clear_req.bits.index
+        auto_clear_index_off := auto_clear_req.bits.index_offset
+        auto_clear_state     := AutoClearState.Verify
+      }
+    }
+    is(AutoClearState.Verify) {
+      val sram_entry = dbte_sram_r.data.asTypeOf(new DBCheckerMtdt)
+      val index_hi = auto_clear_index(15, 16 - log2Up(dbte_num))
+      when(sram_entry.index_offset === auto_clear_index_off &&
+           dbte_v_bitmap(index_hi)) {
+        dbte_v_bitmap := dbte_v_bitmap & ~(1.U << index_hi)
+      }
+      // Remove from CAM (transfer owning this CAM slot is done)
+      cam.io.remove_key   := auto_clear_index
+      cam.io.remove_valid := true.B
+      auto_clear_state := AutoClearState.Idle
+    }
+  }
 }
