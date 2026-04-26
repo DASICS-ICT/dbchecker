@@ -52,7 +52,8 @@ class DBCheckerEnCtl extends Bundle with DBCheckerConst{
 }
 class DBCheckerMtdt extends Bundle with DBCheckerConst {
   val index_offset = UInt((16 - log2Up(dbte_num)).W)
-  val reserved     = UInt(( 8 + log2Up(dbte_num)).W)
+  val reserved     = UInt(( 7 + log2Up(dbte_num)).W)
+  val auto_rel_en  = Bool()
   val v            = Bool()
   val w            = Bool()
   val r            = Bool()
@@ -82,6 +83,23 @@ class DBCheckerErrReq extends Bundle {
   val typ  = UInt(2.W)
   val info = UInt(32.W)
   val addr = UInt(64.W)
+}
+
+// Auto-release request from pipeline Stage4W/4R to Ctrl FSM
+class AutoClearReq extends Bundle {
+  val index        = UInt(16.W)
+  val index_offset = UInt(4.W)
+}
+
+// Counter entry for auto-release byte tracking (LUTRAM)
+class CounterEntry extends Bundle {
+  val count  = UInt(48.W)
+  val target = UInt(48.W)
+}
+
+// Auto-clear FSM states
+object AutoClearState extends ChiselEnum {
+  val Idle, Verify, Clear = Value
 }
 
 class DBCheckerCommand extends Bundle with DBCheckerConst{
