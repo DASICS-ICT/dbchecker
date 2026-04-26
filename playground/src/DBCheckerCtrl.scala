@@ -54,10 +54,17 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   val writeDataReg = RegInit(0.U(32.W))
   val writeStrbReg = RegInit(0.U(4.W))
 
+  // auto-clear FSM state (declared early for use in readData/perf logic)
+  val auto_clear_state = RegInit(AutoClearState.Idle)
+  val auto_clear_index = Reg(UInt(16.W))
+  val auto_clear_index_off = Reg(UInt(4.W))
+
   // perf counters (declared early for use in readData state)
   val perf_hit_cnt     = RegInit(0.U(32.W))
   val perf_miss_cnt    = RegInit(0.U(32.W))
   val perf_penalty_cnt = RegInit(0.U(32.W))
+  val auto_rel_cnt     = RegInit(0.U(32.W))
+  val auto_rel_skip    = RegInit(0.U(16.W))
 
   // Default outputs
   s_axil.aw.ready    := false.B
@@ -100,6 +107,12 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
           is(chk_perf_hit.U)     { s_axil.r.bits.data := perf_hit_cnt }
           is(chk_perf_miss.U)    { s_axil.r.bits.data := perf_miss_cnt }
           is(chk_perf_penalty.U) { s_axil.r.bits.data := perf_penalty_cnt }
+          is(chk_auto_rel_status.U) {
+            val auto_rel_active = auto_clear_state === AutoClearState.Verify
+            s_axil.r.bits.data := Cat(0.U(15.W), auto_rel_active, cam_full, 0.U(7.W), cam_used_slots)
+          }
+          is(chk_auto_rel_perf.U)    { s_axil.r.bits.data := Cat(auto_rel_skip, auto_rel_cnt(15,0)) }
+          is(chk_auto_rel_perf_hi.U) { s_axil.r.bits.data := auto_rel_cnt(31, 16).pad(32) }
         }
       }.otherwise {
         s_axil.r.bits.data := 0.U
@@ -342,6 +355,14 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
     perf_penalty_cnt := perf_penalty_cnt + 1.U
   }
 
+  // auto-release perf counters
+  when(!saturated(auto_rel_cnt) && auto_clear_state === AutoClearState.Verify) {
+    auto_rel_cnt := auto_rel_cnt + 1.U
+  }
+  when(!auto_rel_skip.andR && cam_insert_valid && cam_full) {
+    auto_rel_skip := auto_rel_skip + 1.U
+  }
+
   // soft reset perf counters when chk_en is written with non-zero value
   val wmask_perf = Cat((0 until 4).reverse.map(i => Fill(8, writeStrbReg(i))))
   val chk_en_write_nonzero = (state === AXILiteState.writeData) &&
@@ -351,6 +372,8 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
     perf_hit_cnt     := 0.U
     perf_miss_cnt    := 0.U
     perf_penalty_cnt := 0.U
+    auto_rel_cnt     := 0.U
+    auto_rel_skip    := 0.U
   }
 
   // --- Auto-Release CAM + Counter ---
@@ -373,10 +396,8 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   // clear_all: wired from FREE clear_all command
   cam.io.clear_all := cmd_reg_struct.v && cmd_reg_struct.op === cmd_op_free && cmd_reg_struct.imm(16)
 
-  // --- Auto-Clear FSM ---
-  val auto_clear_state = RegInit(AutoClearState.Idle)
-  val auto_clear_index = Reg(UInt(16.W))
-  val auto_clear_index_off = Reg(UInt(4.W))
+  // --- Auto-Clear FSM logic ---
+  // (auto_clear_state, auto_clear_index, auto_clear_index_off declared above)
 
   // Default: pipeline drives remove; FSM overrides in Verify state
   cam.io.remove_key   := cam_remove_key
