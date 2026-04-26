@@ -98,8 +98,9 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
         // Byte-wise write using w.bits.strb
         // write logic
         val wmask = Cat((0 until 4).reverse.map(i => Fill(8, writeStrbReg(i))))
-        when((index === chk_cmd.U && !regFile(index).asTypeOf(new DBCheckerCommand).v) || 
-              index === chk_en.U || index === chk_dbte_mb_hi.U || index === chk_dbte_mb_lo.U)
+        when((index === chk_cmd.U && !regFile(index).asTypeOf(new DBCheckerCommand).v) ||
+              index === chk_en.U || index === chk_dbte_mb_hi.U || index === chk_dbte_mb_lo.U ||
+              index === chk_auto_rel_ctrl.U)
         {
           // write success
           regFile(index) := (regFile(index) & ~wmask) | (writeDataReg & wmask)
