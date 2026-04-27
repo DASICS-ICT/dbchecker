@@ -344,11 +344,19 @@ class DBCheckerPipeStage4R extends Module with DBCheckerConst { // Return_R
     active_rd_slot_valid := true.B
   }
 
-  // Cleared on last R beat (rlast && m_r_chan.fire)
+  // R beat tap + last-beat handling
+  // auto_clear asserts one cycle AFTER the last beat (CAM register delay),
+  // so active_rd_slot_valid must stay true one extra cycle to capture it.
   val r_beat_fire = m_r_chan.valid && m_r_chan.ready
+  val rd_last_beat_d1 = RegInit(false.B)
+
   when(r_beat_fire && m_r_chan.bits.last) {
-    active_rd_valid      := false.B
+    active_rd_valid := false.B
+    rd_last_beat_d1 := true.B
+  }
+  when(rd_last_beat_d1) {
     active_rd_slot_valid := false.B
+    rd_last_beat_d1      := false.B
   }
 
   // Connect active state to pipeline body
@@ -361,9 +369,20 @@ class DBCheckerPipeStage4R extends Module with DBCheckerConst { // Return_R
   rd_active_slot    := active_rd_slot
   rd_slot_valid_out := active_rd_slot_valid
 
-  // Auto-clear request to pipeline (wired in commit 6)
-  auto_clear_req.valid := false.B
-  auto_clear_req.bits  := 0.U.asTypeOf(new AutoClearReq)
+  // Auto-clear request (captures single-cycle auto_clear pulse, holds until FSM ack)
+  val rd_auto_clear_pending = RegInit(false.B)
+
+  when(active_rd_slot_valid && rd_auto_clear && !rd_auto_clear_pending) {
+    rd_auto_clear_pending := true.B
+  }
+
+  auto_clear_req.valid := rd_auto_clear_pending
+  auto_clear_req.bits.index        := active_rd_dbte_index
+  auto_clear_req.bits.index_offset := active_rd_dbte_index(3, 0)
+
+  when(auto_clear_req.fire) {
+    rd_auto_clear_pending := false.B
+  }
 }
 
 class DBCheckerPipeStage4W extends Module with DBCheckerConst { // Return_W
@@ -602,10 +621,18 @@ class DBCheckerPipeline extends Module with DBCheckerConst {
   stage4w.wr_auto_clear := cam_auto_clear
   stage4r.rd_auto_clear := cam_auto_clear && !stage4w.wr_beat_fire
 
-  // auto_clear_req from Stage4W to ctrl
-  auto_clear_req <> stage4w.auto_clear_req
-  // Stage4R auto_clear_req not used yet (commit 5)
-  stage4r.auto_clear_req.ready := false.B
+  // auto_clear_req to ctrl: W priority over R
+  when(stage4w.auto_clear_req.valid) {
+    auto_clear_req.valid := stage4w.auto_clear_req.valid
+    auto_clear_req.bits  := stage4w.auto_clear_req.bits
+    stage4w.auto_clear_req.ready := auto_clear_req.ready
+    stage4r.auto_clear_req.ready := false.B
+  }.otherwise {
+    auto_clear_req.valid := stage4r.auto_clear_req.valid
+    auto_clear_req.bits  := stage4r.auto_clear_req.bits
+    stage4r.auto_clear_req.ready := auto_clear_req.ready
+    stage4w.auto_clear_req.ready := false.B
+  }
 
   debug_if := stage3.debug_dbte.asUInt
   perf     := stage1.perf
