@@ -151,11 +151,11 @@ module dbchecker_sim_tb();
         // 测试用例: 测试性能计数器
         test_perf_counters();
 
-        // 测试用例: 测试禁用DBChecker
-        test_disable_checker();
-
         // 测试用例: 测试Auto-Release功能
         test_auto_release();
+
+        // 测试用例: 测试禁用DBChecker
+        test_disable_checker();
 
         // 完成测试
         #100ns;
