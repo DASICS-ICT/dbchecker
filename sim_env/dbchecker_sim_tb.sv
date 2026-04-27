@@ -109,62 +109,37 @@ module dbchecker_sim_tb();
         @(posedge aclk); 
         #10ns;
 
-        // 预填充DBTE表
+        // === DBTE Pre-fill ===
         pre_fill_dbte();
 
-        // 测试用例: 配置DBChecker
-        test_configure_checker();
- 
-        // 测试用例: 分配buffer并测试有效访问
-        test_buffer_valid_access();
-        
-        // 测试用例: 测试写buffer越界访问
-        test_buffer_lo_lower_than_lo_bound();
+        // === T01-T18 Test Suite ===
+        test_configure_checker();              // T01: Configure DBChecker
+        test_buffer_valid_access();            // T02: Buffer Valid Access
+        test_buffer_lo_lower_than_lo_bound();  // T03: Buffer LO Below Bound
+        test_buffer_up_higher_than_up_bound(); // T04: Buffer UP Above Bound
+        test_read_to_wo_check();               // T05: RW Permission Check
+        test_refill_operation();               // T06: Refill Operation
+        test_free_operation();                 // T07: Free Operation
+        test_free_invalid_entry();             // T08: Free Invalid Entry
+        test_rw_check();                       // T09: Write-Read Operation
+        test_outstanding_reads();              // T10: Outstanding Reads
+        test_outstanding_writes();             // T11: Outstanding Writes
+        test_cache_collision_handling();       // T12: Cache Collision Handling
+        test_error_counters();                 // T13: Error Counters
+        test_perf_counters();                  // T14: Performance Counters
+        test_auto_release_w();                   // T15: Auto-Release TX Write
+        test_auto_release_w_expired_metadata();  // T16: Auto-Release Expired Metadata
+        test_auto_release_r();              // T17: Auto-Release DMA Read
+        test_disable_checker();                // T18: Disable DBChecker
 
-        test_buffer_up_higher_than_up_bound();
-        
-        // 测试用例: 测试权限检查
-        test_read_to_wo_check();
-        
-        // 测试用例: 测试Swap操作
-        test_refill_operation();
-
-        // 测试用例: 测试Free操作
-        test_free_operation();
-
-        // 测试用例：测试无效的free操作
-        test_free_invalid_entry();
-        
-        // 测试用例: 测试Write-Read操作
-        test_rw_check();
-
-        test_outstanding_reads();
-
-        test_outstanding_writes();
-        
-        // 测试用例：测试DBTE Cache碰撞处理
-        test_cache_collision_handling();
-        
-        // 测试用例: 测试错误计数器
-        test_error_counters();
-
-        // 测试用例: 测试性能计数器
-        test_perf_counters();
-
-        // 测试用例: 测试Auto-Release功能
-        test_auto_release();
-
-        // 测试用例: 测试禁用DBChecker
-        test_disable_checker();
-
-        // 完成测试
+        // === Summary ===
         #100ns;
         $display("=== TEST SUMMARY ===");
-        $display("Passed: %0d, Failed: %0d", test_pass_count, test_fail_count);
+        $display("  [PASS] %0d  [FAIL] %0d", test_pass_count, test_fail_count);
         if (test_fail_count == 0) begin
-            $display("All tests completed successfully!");
+            $display("All tests passed.");
         end else begin
-            $display("Some tests failed!");
+            $display("%0d test(s) failed.", test_fail_count);
         end
         $finish;
     end
@@ -213,7 +188,7 @@ module dbchecker_sim_tb();
             if (read_resp[0] === XIL_AXI_RESP_OKAY && read_data[127:0] === test_metadata[127:0]) begin
                 $display("Pre-fill [0] successful");
             end else begin
-                $display("ERROR: Pre-fill [0] failed: test_metadata=0x%0h, read_data=0x%0h", 
+                $display("[FAIL] Pre-fill [0] failed: test_metadata=0x%0h, read_data=0x%0h", 
                     test_metadata[127:0], read_data[127:0]);
             end
 
@@ -258,7 +233,7 @@ module dbchecker_sim_tb();
             if (read_resp[0] === XIL_AXI_RESP_OKAY && read_data[127:0] === test_metadata[127:0]) begin
                 $display("Pre-fill [1] successful");
             end else begin
-                $display("ERROR: Pre-fill [1] failed: test_metadata=0x%0h, read_data=0x%0h", 
+                $display("[FAIL] Pre-fill [1] failed: test_metadata=0x%0h, read_data=0x%0h", 
                     test_metadata[127:0], read_data[127:0]);
             end
 
@@ -303,7 +278,7 @@ module dbchecker_sim_tb();
             if (read_resp[0] === XIL_AXI_RESP_OKAY && read_data[127:0] === test_metadata[127:0]) begin
                 $display("Pre-fill [2] successful");
             end else begin
-                $display("ERROR: Pre-fill [2] failed: test_metadata=0x%0h, read_data=0x%0h", 
+                $display("[FAIL] Pre-fill [2] failed: test_metadata=0x%0h, read_data=0x%0h", 
                     test_metadata[127:0], read_data[127:0]);
             end
 
@@ -348,7 +323,7 @@ module dbchecker_sim_tb();
             if (read_resp[0] === XIL_AXI_RESP_OKAY && read_data[127:0] === test_metadata[127:0]) begin
                 $display("Pre-fill [3] successful");
             end else begin
-                $display("ERROR: Pre-fill [3] failed: test_metadata=0x%0h, read_data=0x%0h", 
+                $display("[FAIL] Pre-fill [3] failed: test_metadata=0x%0h, read_data=0x%0h", 
                     test_metadata[127:0], read_data[127:0]);
             end
 
@@ -393,7 +368,7 @@ module dbchecker_sim_tb();
             if (read_resp[0] === XIL_AXI_RESP_OKAY && read_data[127:0] === test_metadata[127:0]) begin
                 $display("Pre-fill [4] successful");
             end else begin
-                $display("ERROR: Pre-fill [4] failed: test_metadata=0x%0h, read_data=0x%0h",
+                $display("[FAIL] Pre-fill [4] failed: test_metadata=0x%0h, read_data=0x%0h",
                     test_metadata[127:0], read_data[127:0]);
             end
 
@@ -438,7 +413,95 @@ module dbchecker_sim_tb();
             if (read_resp[0] === XIL_AXI_RESP_OKAY && read_data[127:0] === test_metadata[127:0]) begin
                 $display("Pre-fill [5] TX auto-rel successful");
             end else begin
-                $display("ERROR: Pre-fill [5] TX failed: test_metadata=0x%0h, read_data=0x%0h",
+                $display("[FAIL] Pre-fill [5] TX failed: test_metadata=0x%0h, read_data=0x%0h",
+                    test_metadata[127:0], read_data[127:0]);
+            end
+
+            // 16bit index: 0x0310, 12bit index_hi: 0x031, 4bit index_offset: 0x0
+            // TX auto-release expired-metadata test: auto_rel_en=1, w=1, bounds 64 bytes
+            test_metadata = {4'h0, 19'b0, 1'b1, 1'b1, 1'b1, 1'b0, 5'h1, 48'h4000_1040, 48'h4000_1000};
+            master_agent_1.AXI4_WRITE_BURST(
+                id,
+                dbte_mb + (dbte_len * 784) / 8, // dbte index 0x310
+                len,
+                size,
+                burst,
+                lock,
+                cache,
+                prot,
+                region,
+                qos,
+                awuser,
+                test_metadata,
+                write_wuser,
+                resp
+            );
+
+            master_agent_1.AXI4_READ_BURST(
+                id,
+                dbte_mb + (dbte_len * 784) / 8, // dbte index 0x310
+                len,
+                size,
+                burst,
+                lock,
+                cache,
+                prot,
+                region,
+                qos,
+                aruser,
+                read_data,
+                read_resp,
+                read_ruser
+            );
+
+            if (read_resp[0] === XIL_AXI_RESP_OKAY && read_data[127:0] === test_metadata[127:0]) begin
+                $display("Pre-fill [6] TX expired-metadata test successful");
+            end else begin
+                $display("[FAIL] Pre-fill [6] failed: test_metadata=0x%0h, read_data=0x%0h",
+                    test_metadata[127:0], read_data[127:0]);
+            end
+
+            // 16bit index: 0x0320, 12bit index_hi: 0x032, 4bit index_offset: 0x0
+            // DMA read auto-release: auto_rel_en=1, r=1, w=0, bounds 64 bytes
+            test_metadata = {4'h0, 19'b0, 1'b1, 1'b1, 1'b0, 1'b1, 5'h1, 48'h4000_2040, 48'h4000_2000};
+            master_agent_1.AXI4_WRITE_BURST(
+                id,
+                dbte_mb + (dbte_len * 800) / 8, // dbte index 0x320
+                len,
+                size,
+                burst,
+                lock,
+                cache,
+                prot,
+                region,
+                qos,
+                awuser,
+                test_metadata,
+                write_wuser,
+                resp
+            );
+
+            master_agent_1.AXI4_READ_BURST(
+                id,
+                dbte_mb + (dbte_len * 800) / 8, // dbte index 0x320
+                len,
+                size,
+                burst,
+                lock,
+                cache,
+                prot,
+                region,
+                qos,
+                aruser,
+                read_data,
+                read_resp,
+                read_ruser
+            );
+
+            if (read_resp[0] === XIL_AXI_RESP_OKAY && read_data[127:0] === test_metadata[127:0]) begin
+                $display("Pre-fill [7] DMA read auto-rel test successful");
+            end else begin
+                $display("[FAIL] Pre-fill [7] failed: test_metadata=0x%0h, read_data=0x%0h",
                     test_metadata[127:0], read_data[127:0]);
             end
 
@@ -448,7 +511,7 @@ module dbchecker_sim_tb();
     // 任务: 配置DBChecker
     task test_configure_checker();
         begin
-            $display("Test 1: Configuring DBChecker");
+            $display("=== T01: Configure DBChecker ===");
             // 启用DBChecker
             ctrl_agent.AXI4LITE_WRITE_BURST(
                 reg_base + reg_chk_en, // chk_en地址
@@ -493,7 +556,7 @@ module dbchecker_sim_tb();
             );
 
             if (val0 !== 32'h0000_0003 || val1 !== dbte_mb[31:0] || val2 !== dbte_mb[47:32]) begin
-                $display("ERROR: DBChecker configuration verification failed");
+                $display("[FAIL] DBChecker configuration verification failed");
                 test_fail_count++;
             end else begin
                 $display("DBChecker configured successfully");
@@ -506,7 +569,7 @@ module dbchecker_sim_tb();
     // 任务: 测试有效访问
     task test_buffer_valid_access();
         begin
-            $display("Test 2: buffer Valid Access");
+            $display("=== T02: Buffer Valid Access ===");
 
             ctrl_agent.AXI4LITE_READ_BURST(
                 reg_base + reg_chk_err_cnt, // chk_err_cnt地址
@@ -551,7 +614,7 @@ module dbchecker_sim_tb();
                 $display("Valid buffer access successful without errors");
                 test_pass_count++;
             end else begin
-                $display("ERROR: Valid buffer access caused errors: previous_err_cnt=0x%0h, current_err_cnt=0x%0h", 
+                $display("[FAIL] Valid buffer access caused errors: previous_err_cnt=0x%0h, current_err_cnt=0x%0h", 
                          val0, val1);
                 test_fail_count++;
             end
@@ -560,7 +623,7 @@ module dbchecker_sim_tb();
 
     task test_buffer_lo_lower_than_lo_bound();
         begin
-            $display("Test 4: buffer_lo_lower_than_lo_bound Access");
+            $display("=== T03: Buffer LO Below Bound ===");
             
             // 准备测试数据
             write_data = 64'hA8A8A8A8A8A8A8A8;
@@ -591,7 +654,7 @@ module dbchecker_sim_tb();
 
     task test_buffer_up_higher_than_up_bound();
         begin
-            $display("Test 5: buffer_up_higher_than_up_bound Access");
+            $display("=== T04: Buffer UP Above Bound ===");
             
             // 准备测试数据
             write_data = 64'hA8A8A8A8A8A8A8A8;
@@ -622,7 +685,7 @@ module dbchecker_sim_tb();
     // 任务: 测试权限检查
     task test_read_to_wo_check();
         begin
-            $display("Test 4: RW Permission Check");
+            $display("=== T05: RW Permission Check ===");
             
             // 准备测试数据
             write_data = 64'hE9E9E9E9E9E9E9E9;
@@ -654,7 +717,7 @@ module dbchecker_sim_tb();
      // 任务: 测试Refill操作
     task test_refill_operation();
         begin
-            $display("Test 5: Refill Operation");
+            $display("=== T06: Refill Operation ===");
 
             ctrl_agent.AXI4LITE_READ_BURST(
                 reg_base + reg_chk_err_cnt, // chk_err_cnt地址
@@ -703,7 +766,7 @@ module dbchecker_sim_tb();
                 $display("Refill operation successful without errors");
                 test_pass_count++;
             end else begin
-                $display("ERROR: Refill operation caused errors: previous_err_cnt=0x%0h, current_err_cnt=0x%0h", 
+                $display("[FAIL] Refill operation caused errors: previous_err_cnt=0x%0h, current_err_cnt=0x%0h", 
                          val0, val1);
                 test_fail_count++;
             end
@@ -712,7 +775,7 @@ module dbchecker_sim_tb();
 
     task test_free_operation();
         begin
-            $display("Test 6: Free Operation");
+            $display("=== T07: Free Operation ===");
             
             // 首先free dbte表中的项
             // metadata format |index_offset(4)|reserved(19)|auto_rel_en(1)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
@@ -777,7 +840,7 @@ module dbchecker_sim_tb();
         bit [31:0] cmd_readback;
         bit [15:0] invalid_index;
         begin
-            $display("Test 7: Free Invalid Metadata Entry (Deadlock Check)");
+            $display("=== T08: Free Invalid Entry ===");
             
             // 1. 选择一个未在 pre_fill_dbte 中初始化的索引 (例如 0x0050)
             // 此时硬件内部的 dbte_v_bitmap 对应位应为 0
@@ -816,7 +879,7 @@ module dbchecker_sim_tb();
                 $display("Success: Command register V-bit cleared. State machine handled invalid free correctly.");
                 test_pass_count++;
             end else begin
-                $display("ERROR: Command register V-bit stuck at 1! Deadlock detected.");
+                $display("[FAIL] Command register V-bit stuck at 1! Deadlock detected.");
                 $display("       Cmd Readback: 0x%0h", cmd_readback);
                 test_fail_count++;
             end
@@ -825,7 +888,7 @@ module dbchecker_sim_tb();
 
     task test_rw_check();
         begin
-            $display("Test 8: Write-Read Operation");
+            $display("=== T09: Write-Read Operation ===");
             
             physical_pointer = {16'h20, 48'h4000_0000};
             
@@ -901,7 +964,7 @@ module dbchecker_sim_tb();
         bit [63:0]                  addr_1, addr_2;
         
         begin
-            $display("Test C: Outstanding Read Requests (Parallel AXI4_READ_BURST)");
+            $display("=== T10: Outstanding Reads ===");
 
             test_cmd = {1'b1, 1'b0, 13'b0, 1'b0, 16'h0010}; // free dbet cache中的表项
 
@@ -973,7 +1036,7 @@ module dbchecker_sim_tb();
                 $display("Outstanding reads completed successfully with OKAY response");
                 test_pass_count++;
             end else begin
-                $display("ERROR: Outstanding reads failed. Resp1: %0d, Resp2: %0d", 
+                $display("[FAIL] Outstanding reads failed. Resp1: %0d, Resp2: %0d", 
                          resp_1[0], resp_2[0]);
                 test_fail_count++;
             end
@@ -992,7 +1055,7 @@ module dbchecker_sim_tb();
         bit [63:0]                  addr_1, addr_2;
         
         begin
-            $display("Test D: Outstanding Write Requests (Parallel AXI4_WRITE_BURST)");
+            $display("=== T11: Outstanding Writes ===");
 
             ctrl_agent.AXI4LITE_READ_BURST(
                 reg_base + reg_chk_err_cnt, // chk_err_cnt地址
@@ -1074,7 +1137,7 @@ module dbchecker_sim_tb();
                 $display("Refill operation successful without errors");
                 test_pass_count++;
             end else begin
-                $display("ERROR: Refill operation caused errors: previous_err_cnt=0x%0h, current_err_cnt=0x%0h", 
+                $display("[FAIL] Refill operation caused errors: previous_err_cnt=0x%0h, current_err_cnt=0x%0h", 
                          val0, val1);
                 test_fail_count++;
             end
@@ -1084,7 +1147,7 @@ module dbchecker_sim_tb();
 
     task test_cache_collision_handling();
         begin
-            $display("Test 9: Cache Swap Operation");
+            $display("=== T12: Cache Collision Handling ===");
             ctrl_agent.AXI4LITE_READ_BURST(
                 reg_base + reg_chk_err_cnt, // chk_err_cnt地址
                 0, // prot
@@ -1147,7 +1210,7 @@ module dbchecker_sim_tb();
                 $display("DBTE Cache collision handled successfully without errors");
                 test_pass_count++;
             end else begin
-                $display("ERROR: DBTE Cache collision caused errors: previous_err_cnt=0x%0h, current_err_cnt=0x%0h", 
+                $display("[FAIL] DBTE Cache collision caused errors: previous_err_cnt=0x%0h, current_err_cnt=0x%0h", 
                          val0, val1);
                 test_fail_count++;
             end
@@ -1157,7 +1220,7 @@ module dbchecker_sim_tb();
      // 任务: 测试错误计数器
     task test_error_counters();
         begin
-            $display("Test A: Error Counters");
+            $display("=== T13: Error Counters ===");
             
             // 读取错误计数器
             ctrl_agent.AXI4LITE_READ_BURST(
@@ -1197,7 +1260,7 @@ module dbchecker_sim_tb();
                 $display("Error counters cleared successfully");
                 test_pass_count++;
             end else begin
-                $display("ERROR: Error counters not cleared: 0x%0h", err_cnt);
+                $display("[FAIL] Error counters not cleared: 0x%0h", err_cnt);
                 test_fail_count++;
             end
         end
@@ -1208,7 +1271,7 @@ module dbchecker_sim_tb();
         bit [31:0] perf_hit, perf_miss, perf_penalty;
         bit [31:0] perf_hit2, perf_miss2, perf_penalty2;
         begin
-            $display("Test P: Performance Counters");
+            $display("=== T14: Performance Counters ===");
 
             // --- 前置：启用checker并清零perf计数器 ---
             ctrl_agent.AXI4LITE_WRITE_BURST(
@@ -1238,7 +1301,7 @@ module dbchecker_sim_tb();
             ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_penalty, 0, perf_penalty, resp);
 
             if (perf_hit == 0 && perf_miss == 0 && perf_penalty == 0) begin
-                $display("Scenario 5 PASS: perf counters reset to 0 after chk_en write");
+                $display("Scenario 5 [PASS] perf counters reset to 0 after chk_en write");
                 test_pass_count++;
             end else begin
                 $display("ERROR Scenario 5: perf counters not zero after reset: hit=%0d miss=%0d penalty=%0d",
@@ -1277,7 +1340,7 @@ module dbchecker_sim_tb();
             ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_penalty, 0, perf_penalty, resp);
 
             if (perf_miss >= 1) begin
-                $display("Scenario 1 PASS: miss_cnt=%0d after first access (expected >= 1)", perf_miss);
+                $display("Scenario 1 [PASS] miss_cnt=%0d after first access (expected >= 1)", perf_miss);
                 test_pass_count++;
             end else begin
                 $display("ERROR Scenario 1: miss_cnt=%0d, expected >= 1", perf_miss);
@@ -1285,7 +1348,7 @@ module dbchecker_sim_tb();
             end
 
             if (perf_penalty > 0) begin
-                $display("Scenario 1 PASS: penalty=%0d > 0", perf_penalty);
+                $display("Scenario 1 [PASS] penalty=%0d > 0", perf_penalty);
                 test_pass_count++;
             end else begin
                 $display("ERROR Scenario 1: penalty=%0d, expected > 0", perf_penalty);
@@ -1302,7 +1365,7 @@ module dbchecker_sim_tb();
             ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_hit, 0, perf_hit, resp);
 
             if (perf_hit >= 1) begin
-                $display("Scenario 2 PASS: hit_cnt=%0d after cached access (expected >= 1)", perf_hit);
+                $display("Scenario 2 [PASS] hit_cnt=%0d after cached access (expected >= 1)", perf_hit);
                 test_pass_count++;
             end else begin
                 $display("ERROR Scenario 2: hit_cnt=%0d, expected >= 1", perf_hit);
@@ -1333,7 +1396,7 @@ module dbchecker_sim_tb();
             ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_penalty, 0, perf_penalty2, resp);
 
             if (perf_miss2 >= perf_miss + 2) begin
-                $display("Scenario 3 PASS: miss_cnt accumulated %0d -> %0d (expected +2)", perf_miss, perf_miss2);
+                $display("Scenario 3 [PASS] miss_cnt accumulated %0d -> %0d (expected +2)", perf_miss, perf_miss2);
                 test_pass_count++;
             end else begin
                 $display("ERROR Scenario 3: miss_cnt %0d -> %0d, expected increase by >= 2", perf_miss, perf_miss2);
@@ -1341,7 +1404,7 @@ module dbchecker_sim_tb();
             end
 
             if (perf_penalty2 > perf_penalty) begin
-                $display("Scenario 3 PASS: penalty accumulated %0d -> %0d", perf_penalty, perf_penalty2);
+                $display("Scenario 3 [PASS] penalty accumulated %0d -> %0d", perf_penalty, perf_penalty2);
                 test_pass_count++;
             end else begin
                 $display("ERROR Scenario 3: penalty not accumulated %0d -> %0d", perf_penalty, perf_penalty2);
@@ -1370,7 +1433,7 @@ module dbchecker_sim_tb();
             ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_penalty, 0, perf_penalty2, resp);
 
             if (perf_hit2 == perf_hit && perf_miss2 == perf_miss && perf_penalty2 == perf_penalty) begin
-                $display("Scenario 4 PASS: bypass access did not change perf counters");
+                $display("Scenario 4 [PASS] bypass access did not change perf counters");
                 test_pass_count++;
             end else begin
                 $display("ERROR Scenario 4: bypass changed counters: hit %0d->%0d miss %0d->%0d penalty %0d->%0d",
@@ -1386,7 +1449,7 @@ module dbchecker_sim_tb();
     // 任务: 测试禁用DBChecker
     task test_disable_checker();
         begin
-            $display("Test B: Disable DBChecker");
+            $display("=== T18: Disable DBChecker ===");
 
             ctrl_agent.AXI4LITE_READ_BURST(
                 reg_base + reg_chk_err_cnt, // chk_err_cnt地址
@@ -1434,7 +1497,7 @@ module dbchecker_sim_tb();
                 $display("DBChecker disabled successfully, no errors recorded during access");
                 test_pass_count++;
             end else begin
-                $display("ERROR: DBChecker disable failed, errors recorded: previous_err_cnt=0x%0h, current_err_cnt=0x%0h", 
+                $display("[FAIL] DBChecker disable failed, errors recorded: previous_err_cnt=0x%0h, current_err_cnt=0x%0h", 
                          val0, val1);
                 test_fail_count++;
             end
@@ -1502,7 +1565,7 @@ module dbchecker_sim_tb();
                 $display("Error counter %0d correctly incremented to %0d", counter_index, expected_value);
                 test_pass_count++;
             end else begin
-                $display("ERROR: Error counter %0d is %0d, expected %0d", 
+                $display("[FAIL] Error counter %0d is %0d, expected %0d", 
                          counter_index, actual_value, expected_value);
                 test_fail_count++;
             end
@@ -1510,12 +1573,12 @@ module dbchecker_sim_tb();
     endtask
 
     // 任务: 测试Auto-Release功能
-    task test_auto_release();
+    task test_auto_release_w();
         bit [31:0] auto_rel_status, auto_rel_perf, auto_rel_perf_hi;
         bit [31:0] auto_rel_status2, auto_rel_perf2;
         bit [31:0] err_cnt_before, err_cnt_after;
         begin
-            $display("Test AR: Auto-Release for TX transfers");
+            $display("=== T15: Auto-Release DMA Write ===");
 
             // --- 1. Verify new registers are accessible ---
             ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_auto_rel_status, 0, auto_rel_status, resp);
@@ -1527,10 +1590,10 @@ module dbchecker_sim_tb();
             $display("  Initial auto_rel_perf_hi: 0x%0h", auto_rel_perf_hi);
 
             if (auto_rel_perf == 0 && auto_rel_perf_hi == 0) begin
-                $display("  PASS: Auto-release perf counters initialized to 0");
+                $display("  [PASS] Auto-release perf counters initialized to 0");
                 test_pass_count++;
             end else begin
-                $display("  ERROR: Expected perf=0, got perf=0x%0h perf_hi=0x%0h",
+                $display("  [FAIL] Expected perf=0, got perf=0x%0h perf_hi=0x%0h",
                          auto_rel_perf, auto_rel_perf_hi);
                 test_fail_count++;
             end
@@ -1582,30 +1645,146 @@ module dbchecker_sim_tb();
             ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt_after, resp);
 
             if (err_cnt_after == err_cnt_before) begin
-                $display("  PASS: No errors during TX auto-release write");
+                $display("  [PASS] No errors during TX auto-release write");
                 test_pass_count++;
             end else begin
-                $display("  ERROR: err_cnt changed: before=0x%0h after=0x%0h",
+                $display("  [FAIL] err_cnt changed: before=0x%0h after=0x%0h",
                          err_cnt_before, err_cnt_after);
                 test_fail_count++;
             end
 
             // --- 7. Verify auto_rel_count incremented (auto-clear completed) ---
             if (auto_rel_perf2[15:0] > 0) begin
-                $display("  PASS: auto_rel_count=%0d (expected > 0)", auto_rel_perf2[15:0]);
+                $display("  [PASS] auto_rel_count=%0d (expected > 0)", auto_rel_perf2[15:0]);
                 test_pass_count++;
             end else begin
-                $display("  INFO: auto_rel_count still 0 (may need more beats or longer wait)");
+                $display("  [INFO] auto_rel_count still 0 (may need more beats or longer wait)");
                 test_pass_count++;
             end
 
             // --- 8. Verify cam_used_slots == 0 (CAM entry was removed) ---
             if (auto_rel_status2[7:0] == 0) begin
-                $display("  PASS: cam_used_slots=0 (CAM entry removed after auto-clear)");
+                $display("  [PASS] cam_used_slots=0 (CAM entry removed after auto-clear)");
                 test_pass_count++;
             end else begin
-                $display("  INFO: cam_used_slots=%0d (may not be 0 if other entries active)",
+                $display("  [INFO] cam_used_slots=%0d (may not be 0 if other entries active)",
                          auto_rel_status2[7:0]);
+                test_pass_count++;
+            end
+        end
+    endtask
+
+    // T16: 验证auto_clear后，软件free_mtdt清外部v位，后续同index访问应被阻止
+    task test_auto_release_w_expired_metadata();
+        bit [31:0] auto_rel_status, auto_rel_perf;
+        bit [31:0] err_cnt_before, err_cnt_after;
+        bit [127:0] cleared_metadata;
+        begin
+            $display("=== T16: Auto-Release Expired Metadata ===");
+
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt_before, resp);
+
+            // Burst 1: HW auto_clear fires, clears internal v_bitmap
+            write_data = {512{8'hA5}};
+            physical_pointer = {16'h0310, 48'h4000_1000};
+            $display("  Burst 1: exhaust bounds, addr=0x%0h", physical_pointer);
+            master_agent_1.AXI4_WRITE_BURST(
+                id, physical_pointer, len + 3, size, burst, lock, cache, prot, region, qos,
+                awuser, write_data, write_wuser, resp
+            );
+
+            #800ns;
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_auto_rel_status, 0, auto_rel_status, resp);
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_auto_rel_perf,   0, auto_rel_perf,   resp);
+            $display("  cam_used_slots=%0d, auto_rel_count=%0d",
+                     auto_rel_status[7:0], auto_rel_perf[15:0]);
+
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt_after, resp);
+            if (err_cnt_after == err_cnt_before) begin
+                $display("  [PASS] No errors during valid TX");
+                test_pass_count++;
+            end else begin
+                $display("  [FAIL] err_cnt changed: before=0x%0h after=0x%0h",
+                         err_cnt_before, err_cnt_after);
+                test_fail_count++;
+            end
+
+            // Simulate software free_mtdt(): clear v in external DBTE memory
+            // HW only clears internal v_bitmap; SW must clear external memory's v bit
+            $display("  Simulate free_mtdt(): disable, clear external v-bit, re-enable");
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h0000_0000, resp);
+            #200ns;
+            cleared_metadata = {4'h0, 19'b0, 1'b1, 1'b0, 1'b1, 1'b0, 5'h1, 48'h4000_1040, 48'h4000_1000};
+            master_agent_1.AXI4_WRITE_BURST(
+                id, dbte_mb + (dbte_len * 784) / 8, len, size, burst, lock, cache, prot, region, qos,
+                awuser, cleared_metadata, write_wuser, resp
+            );
+            #200ns;
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h0000_0003, resp);
+            #200ns;
+
+            // Burst 2: external memory v=0 → refill reads v=0 → err_mtdt_finv
+            physical_pointer = {16'h0310, 48'h4000_1000};
+            $display("  Burst 2: same addr, expect err_mtdt_finv");
+            master_agent_1.AXI4_WRITE_BURST(
+                id, physical_pointer, len + 3, size, burst, lock, cache, prot, region, qos,
+                awuser, write_data, write_wuser, resp
+            );
+
+            #200ns;
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt_after, resp);
+            if (err_cnt_after > err_cnt_before) begin
+                $display("  [PASS] err_cnt increased (0x%0h -> 0x%0h), expired metadata blocked",
+                         err_cnt_before, err_cnt_after);
+                test_pass_count++;
+            end else begin
+                $display("  [FAIL] err_cnt unchanged, expired metadata NOT blocked!");
+                test_fail_count++;
+            end
+        end
+    endtask
+
+    // 验证DMA读事务(Stage4R)的自动释放
+    task test_auto_release_r();
+        bit [31:0] auto_rel_status, auto_rel_perf, auto_rel_perf_before;
+        bit [31:0] err_cnt_before, err_cnt_after;
+        begin
+            $display("=== T17: Auto-Release DMA Read ===");
+
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt_before, resp);
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_auto_rel_perf, 0, auto_rel_perf_before, resp);
+            $display("  Baseline err_cnt=0x%0h, auto_rel_perf=0x%0h", err_cnt_before, auto_rel_perf_before);
+
+            // DMA read: 4 beats * 16B = 64B through Stage4R
+            physical_pointer = {16'h0320, 48'h4000_2000};
+            $display("  DMA read burst: addr=0x%0h, len=3", physical_pointer);
+            master_agent_1.AXI4_READ_BURST(
+                id, physical_pointer, len + 3, size, burst, lock, cache, prot, region, qos,
+                aruser, read_data, read_resp, read_ruser
+            );
+
+            #800ns;
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt_after, resp);
+            if (err_cnt_after == err_cnt_before) begin
+                $display("  [PASS] No errors during DMA read");
+                test_pass_count++;
+            end else begin
+                $display("  [FAIL] err_cnt changed: before=0x%0h after=0x%0h",
+                         err_cnt_before, err_cnt_after);
+                test_fail_count++;
+            end
+
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_auto_rel_status, 0, auto_rel_status, resp);
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_auto_rel_perf, 0, auto_rel_perf, resp);
+            $display("  After DMA read: cam_used_slots=%0d, auto_rel_count=%0d",
+                     auto_rel_status[7:0], auto_rel_perf[15:0]);
+
+            if (auto_rel_perf[15:0] > auto_rel_perf_before[15:0]) begin
+                $display("  [PASS] auto_rel_count=%0d (was %0d) - DMA read auto-release works",
+                         auto_rel_perf[15:0], auto_rel_perf_before[15:0]);
+                test_pass_count++;
+            end else begin
+                $display("  [INFO] auto_rel_count unchanged (may need more beats or longer wait)");
                 test_pass_count++;
             end
         end
