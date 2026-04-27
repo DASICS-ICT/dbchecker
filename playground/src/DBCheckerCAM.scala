@@ -21,6 +21,7 @@ class DBCheckerCAM(numEntries: Int, keyWidth: Int) extends Module {
     // Counter access (shared, pipeline handles W/R arbitration)
     val counter_slot   = Input(UInt(log2Up(numEntries).W))
     val counter_bytes  = Input(UInt(8.W))
+    val counter_init_target = Input(UInt(48.W))
     val counter_update = Input(Bool())
     val auto_clear     = Output(Bool())
 
@@ -52,34 +53,56 @@ class DBCheckerCAM(numEntries: Int, keyWidth: Int) extends Module {
     valids(insert_id) := true.B
   }
 
-  // Remove: key match → clear valid
+  // --- Counter LUTRAM (128 * 96-bit → ~192 LUT6 SLICEM) ---
+  // LUTRAM has no reset/initial value: we must detect first access per slot
+  // and initialize before accumulating, otherwise X propagates forever.
+  val counters = Mem(numEntries, new CounterEntry)
+  val counter_initialized = RegInit(VecInit(Seq.fill(numEntries)(false.B)))
+
+  val counter_data = counters.read(io.counter_slot)
+  val new_count    = counter_data.count + io.counter_bytes
+
+  // auto_clear is registered to eliminate combinational glitches.
+  // The LUTRAM read → add → compare path races against counter_slot changes
+  // when counter_update deasserts (both switch on the same pipeline mux edge).
+  val auto_clear_reg = RegInit(false.B)
+
+  when(io.counter_update) {
+    val entry = Wire(new CounterEntry)
+    when(counter_initialized(io.counter_slot)) {
+      // Normal accumulate: read-modify-write
+      entry.count  := new_count
+      entry.target := counter_data.target
+      auto_clear_reg := new_count >= counter_data.target
+    }.otherwise {
+      // First access after allocation: LUTRAM contents are X, ignore them.
+      // Initialize count to this beat's bytes (not 0, so first beat is counted).
+      entry.count  := io.counter_bytes
+      entry.target := io.counter_init_target
+      counter_initialized(io.counter_slot) := true.B
+      auto_clear_reg := false.B
+    }
+    counters.write(io.counter_slot, entry)
+  }.otherwise {
+    auto_clear_reg := false.B
+  }
+
+  io.auto_clear := auto_clear_reg
+
+  // --- Remove: also clear counter_initialized so re-allocation re-initializes ---
   when(io.remove_valid) {
     for (i <- 0 until numEntries) {
       when(keys(i) === io.remove_key && valids(i)) {
         valids(i) := false.B
+        counter_initialized(i) := false.B
       }
     }
   }
 
-  // --- Counter LUTRAM (128 * 96-bit → ~192 LUT6 SLICEM) ---
-  val counters = Mem(numEntries, new CounterEntry)
-
-  val counter_data = counters.read(io.counter_slot)
-  val new_count    = counter_data.count + io.counter_bytes
-  val auto_clear_cond = io.counter_update && (new_count >= counter_data.target)
-
-  when(io.counter_update) {
-    val entry = Wire(new CounterEntry)
-    entry.count  := new_count
-    entry.target := counter_data.target
-    counters.write(io.counter_slot, entry)
-  }
-
-  io.auto_clear := auto_clear_cond
-
   // --- Clear all ---
   when(io.clear_all) {
     valids := VecInit(Seq.fill(numEntries)(false.B))
+    counter_initialized := VecInit(Seq.fill(numEntries)(false.B))
   }
 
   // --- Status outputs ---

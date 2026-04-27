@@ -31,6 +31,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   val cam_remove_valid = IO(Input(Bool()))
   val cam_counter_slot   = IO(Input(UInt(7.W)))
   val cam_counter_bytes  = IO(Input(UInt(8.W)))
+  val cam_counter_init_target = IO(Input(UInt(48.W)))
   val cam_counter_update = IO(Input(Bool()))
   val cam_auto_clear     = IO(Output(Bool()))
   val cam_used_slots     = IO(Output(UInt(8.W)))
@@ -388,6 +389,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   cam_insert_id       := cam.io.insert_id
   cam.io.counter_slot   := cam_counter_slot
   cam.io.counter_bytes  := cam_counter_bytes
+  cam.io.counter_init_target := cam_counter_init_target
   cam.io.counter_update := cam_counter_update
   cam_auto_clear        := cam.io.auto_clear
   cam_used_slots        := cam.io.used_slots

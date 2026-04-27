@@ -470,7 +470,7 @@ class DBCheckerPipeStage4W extends Module with DBCheckerConst { // Return_W
   // Auto-clear request to pipeline (asserted for 1 cycle on match)
   val auto_clear_pending = RegInit(false.B)
 
-  when(wr_beat_fire && active_wr_slot_valid && wr_auto_clear && !auto_clear_pending) {
+  when(active_wr_slot_valid && wr_auto_clear && !auto_clear_pending) {
     auto_clear_pending := true.B
   }
 
@@ -507,6 +507,7 @@ class DBCheckerPipeline extends Module with DBCheckerConst {
   val cam_remove_valid = IO(Output(Bool()))
   val cam_counter_slot   = IO(Output(UInt(7.W)))
   val cam_counter_bytes  = IO(Output(UInt(8.W)))
+  val cam_counter_init_target = IO(Output(UInt(48.W)))
   val cam_counter_update = IO(Output(Bool()))
   val cam_auto_clear     = IO(Input(Bool()))
   val cam_used_slots     = IO(Input(UInt(8.W)))
@@ -589,20 +590,23 @@ class DBCheckerPipeline extends Module with DBCheckerConst {
   // Counter update on beat fire (W priority)
   cam_counter_slot   := 0.U
   cam_counter_bytes  := 0.U
+  cam_counter_init_target := 0.U
   cam_counter_update := false.B
   when(stage4w.wr_beat_fire) {
     cam_counter_slot   := stage4w.wr_active_slot
     cam_counter_bytes  := stage4w.wr_beat_bytes
+    cam_counter_init_target := stage4w.wr_target
     cam_counter_update := true.B
   }.elsewhen(stage4r.rd_beat_fire) {
     cam_counter_slot   := stage4r.rd_active_slot
     cam_counter_bytes  := stage4r.rd_beat_bytes
+    cam_counter_init_target := stage4r.rd_target
     cam_counter_update := true.B
   }
 
-  // Auto-clear feedback to stages
-  stage4w.wr_auto_clear := cam_auto_clear && stage4w.wr_beat_fire
-  stage4r.rd_auto_clear := cam_auto_clear && stage4r.rd_beat_fire && !stage4w.wr_beat_fire
+  // Auto-clear feedback to stages (registered, no beat_fire qualification needed)
+  stage4w.wr_auto_clear := cam_auto_clear
+  stage4r.rd_auto_clear := cam_auto_clear && !stage4w.wr_beat_fire
 
   // auto_clear_req from Stage4W to ctrl
   auto_clear_req <> stage4w.auto_clear_req

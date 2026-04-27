@@ -58,6 +58,7 @@ class DBChecker extends Module with DBCheckerConst {
   ctrl.cam_remove_valid := handler.cam_remove_valid
   ctrl.cam_counter_slot   := handler.cam_counter_slot
   ctrl.cam_counter_bytes  := handler.cam_counter_bytes
+  ctrl.cam_counter_init_target := handler.cam_counter_init_target
   ctrl.cam_counter_update := handler.cam_counter_update
   handler.cam_auto_clear  := ctrl.cam_auto_clear
   handler.cam_used_slots  := ctrl.cam_used_slots
