@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.util._
 import axi._
 trait DBCheckerConst {
-  val RegNum    = 24
+  val RegNum    = 22
   val dbte_num  = 4096
 
   // reg index (actual addr is 4 byte aligned, r/w lo-hi)
@@ -37,17 +37,11 @@ trait DBCheckerConst {
   val chk_perf_miss    = 0x9 // 0x24
   val chk_perf_penalty = 0xA // 0x28
 
-  // auto-release control register (RW)
-  val chk_auto_rel_ctrl   = 0xC // 0x30
+  // auto-release status register (RO): cam_used_slots, cam_full, auto_rel_active
+  val chk_auto_rel_status = 0xC // 0x30
 
-  // auto-release status register (RO)
-  val chk_auto_rel_status = 0xD // 0x34
-
-  // auto-release perf counter lo (RO)
-  val chk_auto_rel_perf   = 0xE // 0x38
-
-  // auto-release perf counter hi (RO)
-  val chk_auto_rel_perf_hi = 0xF // 0x3C
+  // auto-release perf counter (RO): 32-bit auto_rel_cnt
+  val chk_auto_rel_perf   = 0xD // 0x34
 
 
   def cmd_op_free    = 0.U(1.W)

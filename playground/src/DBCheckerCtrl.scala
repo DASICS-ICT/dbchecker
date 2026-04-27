@@ -65,7 +65,6 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   val perf_miss_cnt    = RegInit(0.U(32.W))
   val perf_penalty_cnt = RegInit(0.U(32.W))
   val auto_rel_cnt     = RegInit(0.U(32.W))
-  val auto_rel_skip    = RegInit(0.U(16.W))
 
   // Default outputs
   s_axil.aw.ready    := false.B
@@ -112,8 +111,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
             val auto_rel_active = auto_clear_state === AutoClearState.Verify
             s_axil.r.bits.data := Cat(0.U(15.W), auto_rel_active, cam_full, 0.U(7.W), cam_used_slots)
           }
-          is(chk_auto_rel_perf.U)    { s_axil.r.bits.data := Cat(auto_rel_skip, auto_rel_cnt(15,0)) }
-          is(chk_auto_rel_perf_hi.U) { s_axil.r.bits.data := auto_rel_cnt(31, 16).pad(32) }
+          is(chk_auto_rel_perf.U)    { s_axil.r.bits.data := auto_rel_cnt }
         }
       }.otherwise {
         s_axil.r.bits.data := 0.U
@@ -132,8 +130,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
         // write logic
         val wmask = Cat((0 until 4).reverse.map(i => Fill(8, writeStrbReg(i))))
         when((index === chk_cmd.U && !regFile(index).asTypeOf(new DBCheckerCommand).v) ||
-              index === chk_en.U || index === chk_dbte_mb_hi.U || index === chk_dbte_mb_lo.U ||
-              index === chk_auto_rel_ctrl.U)
+              index === chk_en.U || index === chk_dbte_mb_hi.U || index === chk_dbte_mb_lo.U)
         {
           // write success
           regFile(index) := (regFile(index) & ~wmask) | (writeDataReg & wmask)
@@ -360,9 +357,6 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   when(!saturated(auto_rel_cnt) && auto_clear_state === AutoClearState.Verify) {
     auto_rel_cnt := auto_rel_cnt + 1.U
   }
-  when(!auto_rel_skip.andR && cam_insert_valid && cam_full) {
-    auto_rel_skip := auto_rel_skip + 1.U
-  }
 
   // soft reset perf counters when chk_en is written with non-zero value
   val wmask_perf = Cat((0 until 4).reverse.map(i => Fill(8, writeStrbReg(i))))
@@ -374,7 +368,6 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
     perf_miss_cnt    := 0.U
     perf_penalty_cnt := 0.U
     auto_rel_cnt     := 0.U
-    auto_rel_skip    := 0.U
   }
 
   // --- Auto-Release CAM + Counter ---
