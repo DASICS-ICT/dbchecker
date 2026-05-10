@@ -1581,7 +1581,6 @@ module dbchecker_sim_tb();
             // --- 1. Verify registers accessible and counters zero ---
             ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_auto_rel_status, 0, auto_rel_status, resp);
             ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_auto_rel_perf,   0, auto_rel_perf,   resp);
-
             $display("  Initial auto_rel_status: 0x%0h, auto_rel_perf: 0x%0h",
                      auto_rel_status, auto_rel_perf);
 
@@ -1596,36 +1595,29 @@ module dbchecker_sim_tb();
             // --- 2. Read err_cnt baseline ---
             ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt_before, resp);
 
-            // --- 3. TX write burst through DBChecker (index 0x300, auto_rel_en=1) ---
+            // --- 3. Write burst (index 0x300, auto_rel_en=1, bounds 64B) ---
+            // 4 beats * 16B = 64B exact target. wstrb=0xFFFF for all beats (AXI VIP).
             write_data = {512{8'hA5}};
             physical_pointer = {16'h0300, 48'h4000_0000};
-
-            $display("  TX write burst: addr=0x%0h, len=3 (4 beats)", physical_pointer);
+            $display("  TX burst: addr=0x%0h, len=3 (4x16B=64B)", physical_pointer);
 
             master_agent_1.AXI4_WRITE_BURST(
                 id, physical_pointer, len + 3, size, burst, lock, cache, prot, region, qos,
                 awuser, write_data, write_wuser, resp
             );
 
-            // --- 4. Wait for auto-clear FSM to complete ---
             #500ns;
 
-            // --- 5. Read back auto-release status and perf ---
+            // --- 4. Read back status and perf ---
             ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_auto_rel_status, 0, auto_rel_status2, resp);
             ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_auto_rel_perf,   0, auto_rel_perf2,   resp);
+            $display("  cam_used_slots=%0d, auto_rel_count=%0d",
+                     auto_rel_status2[7:0], auto_rel_perf2);
 
-            $display("  After TX: auto_rel_status=0x%0h, auto_rel_perf=0x%0h",
-                     auto_rel_status2, auto_rel_perf2);
-            $display("    cam_used_slots: %0d", auto_rel_status2[7:0]);
-            $display("    cam_full: %0d", auto_rel_status2[15]);
-            $display("    auto_rel_active: %0d", auto_rel_status2[16]);
-            $display("    auto_rel_count: %0d", auto_rel_perf2);
-
-            // --- 6. Verify err_cnt unchanged ---
+            // --- 5. Verify no errors ---
             ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt_after, resp);
-
             if (err_cnt_after == err_cnt_before) begin
-                $display("  [PASS] No errors during TX auto-release write");
+                $display("  [PASS] No errors");
                 test_pass_count++;
             end else begin
                 $display("  [FAIL] err_cnt changed: before=0x%0h after=0x%0h",
@@ -1633,22 +1625,12 @@ module dbchecker_sim_tb();
                 test_fail_count++;
             end
 
-            // --- 7. Verify auto_rel_count incremented ---
+            // --- 6. Verify auto_rel_count incremented ---
             if (auto_rel_perf2 > 0) begin
                 $display("  [PASS] auto_rel_count=%0d (expected > 0)", auto_rel_perf2);
                 test_pass_count++;
             end else begin
                 $display("  [INFO] auto_rel_count still 0 (may need more beats)");
-                test_pass_count++;
-            end
-
-            // --- 8. Verify cam_used_slots == 0 (CAM entry was removed) ---
-            if (auto_rel_status2[7:0] == 0) begin
-                $display("  [PASS] cam_used_slots=0 (CAM entry removed)");
-                test_pass_count++;
-            end else begin
-                $display("  [INFO] cam_used_slots=%0d (may not be 0 if other entries active)",
-                         auto_rel_status2[7:0]);
                 test_pass_count++;
             end
         end
