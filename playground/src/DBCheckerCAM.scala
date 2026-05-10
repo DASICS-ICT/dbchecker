@@ -3,7 +3,7 @@ package DBChecker
 import chisel3._
 import chisel3.util._
 
-// 128-entry fully-associative register CAM + LUTRAM counter for TX auto-release byte tracking
+// 32-entry fully-associative register CAM + LUTRAM counter for TX auto-release byte tracking
 class DBCheckerCAM(numEntries: Int, keyWidth: Int) extends Module {
   val io = IO(new Bundle {
     // CAM access (pipeline muxes between W/R channels)

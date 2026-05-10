@@ -23,18 +23,18 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   // CAM interface exposed to pipeline
   val cam_lookup_key   = IO(Input(UInt(16.W)))
   val cam_lookup_valid = IO(Output(Bool()))
-  val cam_lookup_id    = IO(Output(UInt(7.W)))
+  val cam_lookup_id    = IO(Output(UInt(5.W)))
   val cam_insert_key   = IO(Input(UInt(16.W)))
   val cam_insert_valid = IO(Input(Bool()))
-  val cam_insert_id    = IO(Output(UInt(7.W)))
+  val cam_insert_id    = IO(Output(UInt(5.W)))
   val cam_remove_key   = IO(Input(UInt(16.W)))
   val cam_remove_valid = IO(Input(Bool()))
-  val cam_counter_slot   = IO(Input(UInt(7.W)))
+  val cam_counter_slot   = IO(Input(UInt(5.W)))
   val cam_counter_bytes  = IO(Input(UInt(8.W)))
   val cam_counter_init_target = IO(Input(UInt(48.W)))
   val cam_counter_update = IO(Input(Bool()))
   val cam_auto_clear     = IO(Output(Bool()))
-  val cam_used_slots     = IO(Output(UInt(8.W)))
+  val cam_used_slots     = IO(Output(UInt(6.W)))
   val cam_full           = IO(Output(Bool()))
 
   // Auto-clear request from pipeline (wired in commit 6)
@@ -109,7 +109,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
           is(chk_perf_penalty.U) { s_axil.r.bits.data := perf_penalty_cnt }
           is(chk_auto_rel_status.U) {
             val auto_rel_active = auto_clear_state === AutoClearState.Verify
-            s_axil.r.bits.data := Cat(0.U(15.W), auto_rel_active, cam_full, 0.U(7.W), cam_used_slots)
+            s_axil.r.bits.data := Cat(0.U(15.W), auto_rel_active, cam_full, 0.U(9.W), cam_used_slots)
           }
           is(chk_auto_rel_perf.U)    { s_axil.r.bits.data := auto_rel_cnt }
         }
@@ -371,7 +371,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   }
 
   // --- Auto-Release CAM + Counter ---
-  val cam = Module(new DBCheckerCAM(128, 16))
+  val cam = Module(new DBCheckerCAM(32, 16))
 
   // Wire CAM IO from pipeline (combinational passthrough)
   cam.io.lookup_key   := cam_lookup_key
