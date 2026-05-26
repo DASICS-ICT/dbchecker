@@ -132,6 +132,9 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   dbte_sram_w.enable  := false.B
 
   val free_sram_wait = RegInit(false.B)
+  // Sticky bit: any FREE during AR/R stage that matches the ongoing refill index.
+  // Compared in real-time during AR/R, consumed by WB to decide whether to skip SRAM writeback.
+  val refill_free_pending = RegInit(false.B)
   // valid bitmap for DBTE entries
   val dbte_v_bitmap  = RegInit(0.U(dbte_num.W))
   dbte_v_bm := dbte_v_bitmap
@@ -268,12 +271,10 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
     is(DBCheckerRefillState.WB) {
       val rb_mtdt = refill_data_reg.asTypeOf(new DBCheckerMtdt)
       when (rb_mtdt.v) {
-        // write back to SRAM and set bitmap
         when(is_freeing) {
-          // do not write back when freeing
-          // if the index is euqal between the one being freed and refilled, it is a collision
-          // in this case, we need to clear the valid bit
-          when(index_collision) {
+          // FREE is being processed in this same cycle
+          when(index_collision || cmd_reg_struct.imm(16)) {
+            // collision (index match or clear_all): return v=0, do not write SRAM
             val invalid_mtdt = WireInit(rb_mtdt)
             invalid_mtdt.v  := false.B
             refill_dbte_rsp_if.valid := true.B
@@ -283,8 +284,27 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
               refill_state := DBCheckerRefillState.AR
             }
           }
-          // otherwise wait until freeing is done
+          // otherwise stall until FREE completes (max 2 cycles)
+        }.elsewhen(refill_free_pending) {
+          // FREE hit this refill during AR or R stage — return v=0, skip SRAM
+          val invalid_mtdt = WireInit(rb_mtdt)
+          invalid_mtdt.v  := false.B
+          refill_dbte_rsp_if.valid := true.B
+          refill_dbte_rsp_if.bits.dbte := invalid_mtdt.asUInt
+          when(refill_dbte_rsp_if.ready) {
+            m_axi_dbte.r.ready := true.B
+            refill_state := DBCheckerRefillState.AR
+          }
+        }.elsewhen(rb_mtdt.no_cache) {
+          // entry is valid but marked no-cache — return data, skip SRAM writeback
+          refill_dbte_rsp_if.valid := true.B
+          refill_dbte_rsp_if.bits.dbte := rb_mtdt.asUInt
+          when(refill_dbte_rsp_if.ready) {
+            m_axi_dbte.r.ready := true.B
+            refill_state := DBCheckerRefillState.AR
+          }
         }.otherwise {
+          // normal path: write to SRAM and set bitmap
           dbte_sram_w.address := refill_index_reg_hi
           dbte_sram_w.data    := rb_mtdt.asUInt
           dbte_sram_w.enable  := true.B
@@ -297,6 +317,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
           }
         }
       }.otherwise{
+        // v=0 invalid entry, return data only
         refill_dbte_rsp_if.valid := true.B
         refill_dbte_rsp_if.bits.dbte := rb_mtdt.asUInt
         when(refill_dbte_rsp_if.ready) {
@@ -305,6 +326,26 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
         }
       }
     }
+  }
+
+  // Full-cycle refill-FREE collision detection: latch during AR/R, act in WB.
+  // Compare in real-time with the ongoing refill index. AR state must be gated by
+  // refill_dbte_req_if.valid to avoid spurious matches against stale index values
+  // when the refill FSM is idle in AR.
+  val refill_active = (refill_state === DBCheckerRefillState.AR && refill_dbte_req_if.valid) ||
+                       refill_state === DBCheckerRefillState.R
+  val refill_check_idx = Mux(refill_state === DBCheckerRefillState.AR,
+      refill_dbte_req_if.bits.index,
+      refill_index_reg)
+  when(is_freeing && refill_active) {
+    when(cmd_reg_struct.imm(16) || cmd_reg_struct.get_index === refill_check_idx) {
+      refill_free_pending := true.B  // sticky, cleared when refill completes
+    }
+  }
+
+  // Clear the sticky collision flag when refill completes
+  when(refill_state === DBCheckerRefillState.WB && refill_dbte_rsp_if.fire) {
+    refill_free_pending := false.B
   }
 
   debug_if := Cat(cmd_reg,err_info_reg,err_addr_hi_reg,err_addr_lo_reg) // reserved
