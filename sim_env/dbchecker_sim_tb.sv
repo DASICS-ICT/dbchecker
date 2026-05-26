@@ -52,6 +52,8 @@ module dbchecker_sim_tb();
     bit [63:0] err_addr;
     bit [31:0] err_info;
     bit [31:0] val0, val1, val2, val3;
+    bit [31:0] perf_hit, perf_miss, perf_penalty;
+    bit [64:0] free_cmd;
 
     bit [31:0] physical_ptr_array [31:0];
     bit [31:0] test_metadata_lo_arrary [31:0];
@@ -150,6 +152,17 @@ module dbchecker_sim_tb();
         // 测试用例: 测试禁用DBChecker
         test_disable_checker();
 
+        // === New tests: no_cache + full-cycle collision detection ===
+        test_no_cache_miss();
+        test_no_cache_hit();
+        test_no_cache_invalid();
+        test_no_cache_boundary();
+        test_collision_refill();
+        test_collision_no_false_positive();
+        test_collision_early();
+        test_collision_clear_all();
+        test_no_cache_plus_collision();
+
         // 完成测试
         #100ns;
         $display("=== TEST SUMMARY ===");
@@ -165,10 +178,10 @@ module dbchecker_sim_tb();
     task pre_fill_dbte();
         begin
             $display("Pre-filling DBTE memory with test metadata");
-            // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
+            // metadata format |index_offset(4)|reserved(19)|no_cache(1)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
             // 16bit index: 0x0, 12bit index: 0x0, 4bit index offset: 0x0
             // this metadata is for write valid / write out of bound / swap and free test
-            test_metadata = {4'h0, 20'b0, 1'b1, 1'b1, 1'b0, 5'h1, 48'h4000_0040, 48'h4000_0000};
+            test_metadata = {4'h0, 19'b0, 1'b0, 1'b1, 1'b1, 1'b0, 5'h1, 48'h4000_0040, 48'h4000_0000};
             master_agent_1.AXI4_WRITE_BURST(
                 id,
                 dbte_mb, // dbte index 0x0
@@ -210,10 +223,10 @@ module dbchecker_sim_tb();
                     test_metadata[127:0], read_data[127:0]);
             end
 
-            // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
+            // metadata format |index_offset(4)|reserved(19)|no_cache(1)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
             // 16bit index: 0x10, 12bit index: 0x1, 4bit index offset: 0x0
             // this metadta is for access DBTE
-            test_metadata = {4'h0, 20'b1, 1'b1, 1'b1, 1'b1, 5'h1, 48'h4010_0000, 48'h4000_1000};
+            test_metadata = {4'h0, 19'b1, 1'b0, 1'b1, 1'b1, 1'b1, 5'h1, 48'h4010_0000, 48'h4000_1000};
             master_agent_1.AXI4_WRITE_BURST(
                 id,
                 dbte_mb + (dbte_len * 16) / 8, // dbte index 0x10
@@ -255,10 +268,10 @@ module dbchecker_sim_tb();
                     test_metadata[127:0], read_data[127:0]);
             end
 
-            // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
+            // metadata format |index_offset(4)|reserved(19)|no_cache(1)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
             // 16bit index: 0x20, 12bit index: 0x2, 4bit index offset: 0x0
             // this metadata is for Rw test
-            test_metadata = {4'h0, 20'h2, 1'b1, 1'b1, 1'b1, 5'h1, 48'h4000_0040, 48'h4000_0000};
+            test_metadata = {4'h0, 19'h2, 1'b0, 1'b1, 1'b1, 1'b1, 5'h1, 48'h4000_0040, 48'h4000_0000};
             master_agent_1.AXI4_WRITE_BURST(
                 id,
                 dbte_mb + (dbte_len * 32) / 8, // dbte index 2
@@ -300,10 +313,10 @@ module dbchecker_sim_tb();
                     test_metadata[127:0], read_data[127:0]);
             end
 
-            // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
+            // metadata format |index_offset(4)|reserved(19)|no_cache(1)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
             // 16bit index: 0x21, 12bit index: 0x2, 4bit index offset: 0x1
             // this metadata is for dbte cache collision
-            test_metadata = {4'h1, 20'h2, 1'b1, 1'b1, 1'b1, 5'h1, 48'h4000_1000, 48'h4000_0000};
+            test_metadata = {4'h1, 19'h2, 1'b0, 1'b1, 1'b1, 1'b1, 5'h1, 48'h4000_1000, 48'h4000_0000};
             master_agent_1.AXI4_WRITE_BURST(
                 id,
                 dbte_mb + (dbte_len * 33) / 8, // dbte index 2
@@ -345,10 +358,10 @@ module dbchecker_sim_tb();
                     test_metadata[127:0], read_data[127:0]);
             end
 
-            // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
+            // metadata format |index_offset(4)|reserved(19)|no_cache(1)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
             // 16bit index: 0xd60, 12bit index: 0xd6, 4bit index offset: 0x0
             // this metadata is for outstanding writes
-            test_metadata = {4'h0, 20'hd6, 1'b1, 1'b1, 1'b0, 5'h1, 48'ha59f_87c0, 48'ha59f_7f40};
+            test_metadata = {4'h0, 19'hd6, 1'b0, 1'b1, 1'b1, 1'b0, 5'h1, 48'ha59f_87c0, 48'ha59f_7f40};
             master_agent_1.AXI4_WRITE_BURST(
                 id,
                 dbte_mb + (dbte_len * 3424) / 8, // dbte index 2
@@ -508,7 +521,7 @@ module dbchecker_sim_tb();
 
     task test_buffer_lo_lower_than_lo_bound();
         begin
-            $display("Test 4: buffer_lo_lower_than_lo_bound Access");
+            $display("Test 3: buffer_lo_lower_than_lo_bound Access");
             
             // 准备测试数据
             write_data = 64'hA8A8A8A8A8A8A8A8;
@@ -539,7 +552,7 @@ module dbchecker_sim_tb();
 
     task test_buffer_up_higher_than_up_bound();
         begin
-            $display("Test 5: buffer_up_higher_than_up_bound Access");
+            $display("Test 4: buffer_up_higher_than_up_bound Access");
             
             // 准备测试数据
             write_data = 64'hA8A8A8A8A8A8A8A8;
@@ -570,7 +583,7 @@ module dbchecker_sim_tb();
     // 任务: 测试权限检查
     task test_read_to_wo_check();
         begin
-            $display("Test 4: RW Permission Check");
+            $display("Test 5: RW Permission Check");
             
             // 准备测试数据
             write_data = 64'hE9E9E9E9E9E9E9E9;
@@ -602,7 +615,7 @@ module dbchecker_sim_tb();
      // 任务: 测试Refill操作
     task test_refill_operation();
         begin
-            $display("Test 5: Refill Operation");
+            $display("Test 6: Refill Operation");
 
             ctrl_agent.AXI4LITE_READ_BURST(
                 reg_base + reg_chk_err_cnt, // chk_err_cnt地址
@@ -660,10 +673,10 @@ module dbchecker_sim_tb();
 
     task test_free_operation();
         begin
-            $display("Test 6: Free Operation");
+            $display("Test 7: Free Operation");
             
             // 首先free dbte表中的项
-            // metadata format |index_offset(4)|reserved(20)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
+            // metadata format |index_offset(4)|reserved(19)|no_cache(1)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
             test_metadata = 128'b0;
             master_agent_1.AXI4_WRITE_BURST(
                 id,
@@ -725,7 +738,7 @@ module dbchecker_sim_tb();
         bit [31:0] cmd_readback;
         bit [15:0] invalid_index;
         begin
-            $display("Test 7: Free Invalid Metadata Entry (Deadlock Check)");
+            $display("Test 8: Free Invalid Metadata Entry (Deadlock Check)");
             
             // 1. 选择一个未在 pre_fill_dbte 中初始化的索引 (例如 0x0050)
             // 此时硬件内部的 dbte_v_bitmap 对应位应为 0
@@ -773,7 +786,7 @@ module dbchecker_sim_tb();
 
     task test_rw_check();
         begin
-            $display("Test 8: Write-Read Operation");
+            $display("Test 9: Write-Read Operation");
             
             physical_pointer = {16'h20, 48'h4000_0000};
             
@@ -849,7 +862,7 @@ module dbchecker_sim_tb();
         bit [63:0]                  addr_1, addr_2;
         
         begin
-            $display("Test C: Outstanding Read Requests (Parallel AXI4_READ_BURST)");
+            $display("Test 10: Outstanding Read Requests (Parallel AXI4_READ_BURST)");
 
             test_cmd = {1'b1, 1'b0, 13'b0, 1'b0, 16'h0010}; // free dbet cache中的表项
 
@@ -940,7 +953,7 @@ module dbchecker_sim_tb();
         bit [63:0]                  addr_1, addr_2;
         
         begin
-            $display("Test D: Outstanding Write Requests (Parallel AXI4_WRITE_BURST)");
+            $display("Test 11: Outstanding Write Requests (Parallel AXI4_WRITE_BURST)");
 
             ctrl_agent.AXI4LITE_READ_BURST(
                 reg_base + reg_chk_err_cnt, // chk_err_cnt地址
@@ -1032,7 +1045,7 @@ module dbchecker_sim_tb();
 
     task test_cache_collision_handling();
         begin
-            $display("Test 9: Cache Swap Operation");
+            $display("Test 12: Cache Swap Operation");
             ctrl_agent.AXI4LITE_READ_BURST(
                 reg_base + reg_chk_err_cnt, // chk_err_cnt地址
                 0, // prot
@@ -1105,7 +1118,7 @@ module dbchecker_sim_tb();
      // 任务: 测试错误计数器
     task test_error_counters();
         begin
-            $display("Test A: Error Counters");
+            $display("Test 13: Error Counters");
             
             // 读取错误计数器
             ctrl_agent.AXI4LITE_READ_BURST(
@@ -1156,7 +1169,7 @@ module dbchecker_sim_tb();
         bit [31:0] perf_hit, perf_miss, perf_penalty;
         bit [31:0] perf_hit2, perf_miss2, perf_penalty2;
         begin
-            $display("Test P: Performance Counters");
+            $display("Test 14: Performance Counters");
 
             // --- 前置：启用checker并清零perf计数器 ---
             ctrl_agent.AXI4LITE_WRITE_BURST(
@@ -1197,7 +1210,7 @@ module dbchecker_sim_tb();
             // --- 重新填充被test_free_operation覆盖的index 0 metadata ---
             // 利用index 0x10的metadata (dev_id=1, bounds覆盖dbte_mb, w=1)
             // 使用id=16使id(4)=1匹配dev_id，避免dev_err导致地址重定向
-            test_metadata = {4'h0, 20'b0, 1'b1, 1'b1, 1'b0, 5'h1, 48'h4000_0040, 48'h4000_0000};
+            test_metadata = {4'h0, 19'b0, 1'b0, 1'b1, 1'b1, 1'b0, 5'h1, 48'h4000_0040, 48'h4000_0000};
             master_agent_1.AXI4_WRITE_BURST(
                 16, {16'h0010, dbte_mb}, len, size, burst, lock, cache, prot,
                 region, qos, awuser, test_metadata, write_wuser, resp
@@ -1334,7 +1347,7 @@ module dbchecker_sim_tb();
     // 任务: 测试禁用DBChecker
     task test_disable_checker();
         begin
-            $display("Test B: Disable DBChecker");
+            $display("Test 15: Disable DBChecker");
 
             ctrl_agent.AXI4LITE_READ_BURST(
                 reg_base + reg_chk_err_cnt, // chk_err_cnt地址
@@ -1452,6 +1465,526 @@ module dbchecker_sim_tb();
             end else begin
                 $display("ERROR: Error counter %0d is %0d, expected %0d", 
                          counter_index, actual_value, expected_value);
+                test_fail_count++;
+            end
+        end
+    endtask
+
+    // ================================================================
+    // Helper tasks for new tests
+    // ================================================================
+
+    task disable_checker();
+        ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h0, resp);
+    endtask
+
+    task enable_checker();
+        ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_dbte_mb_lo, 0, dbte_mb[31:0], resp);
+        ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_dbte_mb_hi, 0, dbte_mb[47:32], resp);
+        ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h3, resp);
+    endtask
+
+    task free_all();
+        free_cmd = {1'b1, 1'b0, 13'b0, 1'b1, 16'h0};
+        ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_cmd, 0, free_cmd, resp);
+        #200ns;
+    endtask
+
+    task clr_err();
+        free_cmd = {1'b1, 1'b1, 30'b0};
+        ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_cmd, 0, free_cmd, resp);
+        #10ns;
+    endtask
+
+    task read_perf_counters();
+        ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_hit,     0, perf_hit,     resp);
+        ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_miss,    0, perf_miss,    resp);
+        ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_penalty, 0, perf_penalty, resp);
+    endtask
+
+    // ================================================================
+    // N1: no_cache=1 — entry never cached, always misses
+    // ================================================================
+    task test_no_cache_miss();
+        begin
+            $display("Test 16: no_cache=1 entry never cached");
+
+            disable_checker();
+            test_metadata = {4'h0, 19'b0, 1'b1/*no_cache=1*/, 1'b1/*v=1*/, 1'b1/*w=1*/, 1'b0/*r=0*/,
+                             5'h1, 48'h5000_0100, 48'h5000_0000};
+            master_agent_1.AXI4_WRITE_BURST(id,
+                dbte_mb + (dbte_len * 256) / 8,  // index 0x100
+                len, size, burst, lock, cache, prot, region, qos, awuser,
+                test_metadata, write_wuser, resp);
+            enable_checker();
+
+            free_all();
+            clr_err();
+            // chk_en write resets perf counters
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h3, resp);
+
+            // First access → miss (refill from DDR)
+            physical_pointer = {16'h0100, 48'h5000_0000};
+            write_data = 64'hDEADBEEFDEADBEEF;
+            master_agent_1.AXI4_WRITE_BURST(id, physical_pointer, len, size, burst,
+                lock, cache, prot, region, qos, awuser, write_data, write_wuser, resp);
+
+            read_perf_counters();
+            if (perf_miss >= 1) begin
+                $display("  First access: miss=%0d (OK)", perf_miss);
+            end else begin
+                $display("  ERROR: First access miss=%0d, expected >= 1", perf_miss);
+                test_fail_count++; return;
+            end
+
+            // Second access → should still miss (no_cache prevented SRAM install)
+            master_agent_1.AXI4_WRITE_BURST(id, physical_pointer, len, size, burst,
+                lock, cache, prot, region, qos, awuser, write_data, write_wuser, resp);
+
+            read_perf_counters();
+            if (perf_miss >= 2 && perf_hit == 0) begin
+                $display("  Second access: miss=%0d hit=%0d (no_cache works)", perf_miss, perf_hit);
+            end else begin
+                $display("  ERROR: Second access miss=%0d hit=%0d, expected >=2 misses, 0 hits",
+                         perf_miss, perf_hit);
+                test_fail_count++; return;
+            end
+
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt, resp);
+            if (err_cnt == 0) begin
+                $display("  No errors — PASS");
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: err_cnt=0x%0h", err_cnt);
+                test_fail_count++;
+            end
+        end
+    endtask
+
+    // ================================================================
+    // N2: no_cache=0 — entry cached normally (regression)
+    // ================================================================
+    task test_no_cache_hit();
+        begin
+            $display("Test 17: no_cache=0 entry cached normally");
+
+            disable_checker();
+            test_metadata = {4'h0, 19'b0, 1'b0/*no_cache=0*/, 1'b1, 1'b1, 1'b0,
+                             5'h1, 48'h5000_1100, 48'h5000_1000};
+            master_agent_1.AXI4_WRITE_BURST(id,
+                dbte_mb + (dbte_len * 512) / 8,  // index 0x200
+                len, size, burst, lock, cache, prot, region, qos, awuser,
+                test_metadata, write_wuser, resp);
+            enable_checker();
+
+            free_all();
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h3, resp);
+
+            // First access → miss
+            physical_pointer = {16'h0200, 48'h5000_1000};
+            write_data = 64'hCAFECAFECAFECAFE;
+            master_agent_1.AXI4_WRITE_BURST(id, physical_pointer, len, size, burst,
+                lock, cache, prot, region, qos, awuser, write_data, write_wuser, resp);
+
+            read_perf_counters();
+            if (perf_miss >= 1) begin
+                $display("  First access: miss=%0d (OK)", perf_miss);
+            end else begin
+                $display("  ERROR: First access miss=%0d", perf_miss);
+                test_fail_count++; return;
+            end
+
+            // Second access → hit (cached normally)
+            master_agent_1.AXI4_WRITE_BURST(id, physical_pointer, len, size, burst,
+                lock, cache, prot, region, qos, awuser, write_data, write_wuser, resp);
+
+            read_perf_counters();
+            if (perf_hit >= 1) begin
+                $display("  Second access: hit=%0d (OK) — PASS", perf_hit);
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: Second access hit=%0d, expected >=1", perf_hit);
+                test_fail_count++;
+            end
+        end
+    endtask
+
+    // ================================================================
+    // N3: no_cache=1 + v=0 → err_mtdt_finv
+    // ================================================================
+    task test_no_cache_invalid();
+        begin
+            $display("Test 18: no_cache=1 + v=0 returns err_mtdt_finv");
+
+            disable_checker();
+            test_metadata = {4'h0, 19'b0, 1'b1/*no_cache=1*/, 1'b0/*v=0*/, 1'b1, 1'b0,
+                             5'h1, 48'h5000_2100, 48'h5000_2000};
+            master_agent_1.AXI4_WRITE_BURST(id,
+                dbte_mb + (dbte_len * 768) / 8,  // index 0x300
+                len, size, burst, lock, cache, prot, region, qos, awuser,
+                test_metadata, write_wuser, resp);
+            enable_checker();
+
+            free_all();
+
+            physical_pointer = {16'h0300, 48'h5000_2000};
+            master_agent_1.AXI4_WRITE_BURST(id, physical_pointer, len, size, burst,
+                lock, cache, prot, region, qos, awuser, write_data, write_wuser, resp);
+
+            #100ns;
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt, resp);
+            if (err_cnt[24:18] >= 1) begin
+                $display("  err_mtdt_finv=%0d (OK) — PASS", err_cnt[24:18]);
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: err_mtdt_finv=%0d, expected >=1", err_cnt[24:18]);
+                test_fail_count++;
+            end
+        end
+    endtask
+
+    // ================================================================
+    // N4: no_cache=1 boundary check works correctly
+    // ================================================================
+    task test_no_cache_boundary();
+        begin
+            $display("Test 19: no_cache=1 boundary check");
+
+            disable_checker();
+            test_metadata = {4'h0, 19'b0, 1'b1/*no_cache=1*/, 1'b1, 1'b1, 1'b0,
+                             5'h1, 48'h5000_3040, 48'h5000_3000};
+            master_agent_1.AXI4_WRITE_BURST(id,
+                dbte_mb + (dbte_len * 1024) / 8,  // index 0x400
+                len, size, burst, lock, cache, prot, region, qos, awuser,
+                test_metadata, write_wuser, resp);
+            enable_checker();
+
+            free_all();
+            clr_err();
+
+            // In-bounds access → no error
+            physical_pointer = {16'h0400, 48'h5000_3020};
+            master_agent_1.AXI4_WRITE_BURST(id, physical_pointer, len, size, burst,
+                lock, cache, prot, region, qos, awuser, write_data, write_wuser, resp);
+            #100ns;
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt, resp);
+            if (err_cnt[10:4] == 0) begin
+                $display("  In-bounds: no error (OK)");
+            end else begin
+                $display("  ERROR: In-bounds caused err_bnd_farea=%0d", err_cnt[10:4]);
+                test_fail_count++; return;
+            end
+
+            // Out-of-bounds access → err_bnd_farea
+            physical_pointer = {16'h0400, 48'h5000_3050};
+            master_agent_1.AXI4_WRITE_BURST(id, physical_pointer, len, size, burst,
+                lock, cache, prot, region, qos, awuser, write_data, write_wuser, resp);
+            #100ns;
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt, resp);
+            if (err_cnt[10:4] >= 1) begin
+                $display("  Out-of-bounds: err_bnd_farea=%0d (OK) — PASS", err_cnt[10:4]);
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: Out-of-bounds err_bnd_farea=%0d, expected >=1", err_cnt[10:4]);
+                test_fail_count++;
+            end
+        end
+    endtask
+
+    // ================================================================
+    // C1: FREE during refill → collision + bitmap not leaked
+    // ================================================================
+    task test_collision_refill();
+        begin
+            $display("Test 20: FREE-refill collision + bitmap verify");
+
+            // Phase A: prepare
+            disable_checker();
+            test_metadata = {4'h0, 19'b0, 1'b0/*no_cache=0*/, 1'b1/*v=1*/, 1'b1, 1'b0,
+                             5'h1, 48'h5000_4100, 48'h5000_4000};
+            master_agent_1.AXI4_WRITE_BURST(id,
+                dbte_mb + (dbte_len * 1280) / 8,  // index 0x500
+                len, size, burst, lock, cache, prot, region, qos, awuser,
+                test_metadata, write_wuser, resp);
+            enable_checker();
+
+            free_all();
+            clr_err();
+
+            // Phase B: collision
+            fork
+                begin  // Thread 1: AXI write triggers refill, blocks in R stage
+                    master_agent_1.AXI4_WRITE_BURST(0,
+                        {16'h0500, 48'h5000_4000},
+                        len, size, burst, lock, cache, prot, region, qos, awuser,
+                        write_data, write_wuser, resp);
+                end
+                begin  // Thread 2: send FREE during refill (DDR still has v=1 from pre-fill)
+                    #50ns;  // let refill start and enter R stage
+                    free_cmd = {1'b1, 1'b0, 14'b0, 16'h0500};
+                    ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_cmd, 0, free_cmd, resp);
+                end
+            join
+
+            // Verify err_mtdt_finv
+            #100ns;
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt, resp);
+            if (err_cnt[24:18] >= 1) begin
+                $display("  Collision: err_mtdt_finv=%0d (OK)", err_cnt[24:18]);
+            end else begin
+                $display("  ERROR: Collision err_mtdt_finv=%0d, expected >=1", err_cnt[24:18]);
+                test_fail_count++; return;
+            end
+
+            // Phase C: bitmap not leaked
+            disable_checker();
+            test_metadata[103] = 1'b1;  // restore v=1
+            master_agent_1.AXI4_WRITE_BURST(id,
+                dbte_mb + (dbte_len * 1280) / 8,
+                len, size, burst, lock, cache, prot, region, qos, awuser,
+                test_metadata, write_wuser, resp);
+            enable_checker();
+
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h3, resp);
+
+            // Access → should miss (collision prevented SRAM install)
+            master_agent_1.AXI4_WRITE_BURST(0, {16'h0500, 48'h5000_4000},
+                len, size, burst, lock, cache, prot, region, qos, awuser,
+                write_data, write_wuser, resp);
+            read_perf_counters();
+            if (perf_miss >= 1) begin
+                $display("  Post-collision: miss=%0d — bitmap NOT leaked (OK)", perf_miss);
+            end else begin
+                $display("  ERROR: Post-collision miss=%0d, expected >=1 (bitmap leaked!)", perf_miss);
+                test_fail_count++; return;
+            end
+
+            // Next access → hit (this time refill installed normally)
+            master_agent_1.AXI4_WRITE_BURST(0, {16'h0500, 48'h5000_4000},
+                len, size, burst, lock, cache, prot, region, qos, awuser,
+                write_data, write_wuser, resp);
+            read_perf_counters();
+            if (perf_hit >= 1) begin
+                $display("  Re-access: hit=%0d (now cached normally) — PASS", perf_hit);
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: Re-access hit=%0d, expected >=1", perf_hit);
+                test_fail_count++;
+            end
+        end
+    endtask
+
+    // ================================================================
+    // C2: FREE different index — no false positive
+    // ================================================================
+    task test_collision_no_false_positive();
+        begin
+            $display("Test 21: FREE different index no false collision");
+
+            disable_checker();
+            // index 0x600 (index_hi=0x60)
+            test_metadata = {4'h0, 19'h60, 1'b0, 1'b1, 1'b1, 1'b0,
+                             5'h1, 48'h5000_5100, 48'h5000_5000};
+            master_agent_1.AXI4_WRITE_BURST(id,
+                dbte_mb + (dbte_len * 1536) / 8,
+                len, size, burst, lock, cache, prot, region, qos, awuser,
+                test_metadata, write_wuser, resp);
+            // index 0x610 (index_hi=0x61)
+            test_metadata = {4'h0, 19'h61, 1'b0, 1'b1, 1'b1, 1'b0,
+                             5'h1, 48'h5000_5200, 48'h5000_5100};
+            master_agent_1.AXI4_WRITE_BURST(id,
+                dbte_mb + (dbte_len * 1552) / 8,
+                len, size, burst, lock, cache, prot, region, qos, awuser,
+                test_metadata, write_wuser, resp);
+            enable_checker();
+
+            free_all();
+            clr_err();
+
+            fork
+                begin  // Thread 1: AXI write to 0x600, triggers refill
+                    master_agent_1.AXI4_WRITE_BURST(0, {16'h0600, 48'h5000_5000},
+                        len, size, burst, lock, cache, prot, region, qos, awuser,
+                        write_data, write_wuser, resp);
+                end
+                begin  // Thread 2: FREE 0x610 (different index_hi) during refill
+                    #50ns;
+                    free_cmd = {1'b1, 1'b0, 14'b0, 16'h0610};
+                    ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_cmd, 0, free_cmd, resp);
+                end
+            join
+
+            #100ns;
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt, resp);
+            if (err_cnt == 0) begin
+                $display("  No error after unrelated FREE (OK)");
+            end else begin
+                $display("  ERROR: err_cnt=0x%0h after unrelated FREE", err_cnt);
+                test_fail_count++; return;
+            end
+
+            // Second access to 0x600 → should hit (refill normal)
+            master_agent_1.AXI4_WRITE_BURST(0, {16'h0600, 48'h5000_5000},
+                len, size, burst, lock, cache, prot, region, qos, awuser,
+                write_data, write_wuser, resp);
+            read_perf_counters();
+            if (perf_hit >= 1) begin
+                $display("  Re-access hit=%0d (refill cached normally) — PASS", perf_hit);
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: Re-access hit=%0d, refill should have cached", perf_hit);
+                test_fail_count++;
+            end
+        end
+    endtask
+
+    // ================================================================
+    // C3: Early collision (no delay — may hit R or WB stage)
+    // ================================================================
+    task test_collision_early();
+        begin
+            $display("Test 22: Early FREE collision");
+
+            disable_checker();
+            test_metadata = {4'h0, 19'b0, 1'b0, 1'b1, 1'b1, 1'b0,
+                             5'h1, 48'h5000_6100, 48'h5000_6000};
+            master_agent_1.AXI4_WRITE_BURST(id,
+                dbte_mb + (dbte_len * 1792) / 8,  // index 0x700
+                len, size, burst, lock, cache, prot, region, qos, awuser,
+                test_metadata, write_wuser, resp);
+            enable_checker();
+
+            free_all();
+            clr_err();
+
+            fork
+                begin
+                    master_agent_1.AXI4_WRITE_BURST(0, {16'h0700, 48'h5000_6000},
+                        len, size, burst, lock, cache, prot, region, qos, awuser,
+                        write_data, write_wuser, resp);
+                end
+                begin
+                    // No delay — FREE may arrive in R or WB, both paths work
+                    free_cmd = {1'b1, 1'b0, 14'b0, 16'h0700};
+                    ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_cmd, 0, free_cmd, resp);
+                end
+            join
+
+            #100ns;
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt, resp);
+            if (err_cnt[24:18] >= 1) begin
+                $display("  err_mtdt_finv=%0d (OK) — PASS", err_cnt[24:18]);
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: err_mtdt_finv=%0d, expected >=1", err_cnt[24:18]);
+                test_fail_count++;
+            end
+        end
+    endtask
+
+    // ================================================================
+    // C4: clear_all during refill
+    // ================================================================
+    task test_collision_clear_all();
+        begin
+            $display("Test 23: clear_all during refill");
+
+            disable_checker();
+            test_metadata = {4'h0, 19'b0, 1'b0, 1'b1, 1'b1, 1'b0,
+                             5'h1, 48'h5000_7100, 48'h5000_7000};
+            master_agent_1.AXI4_WRITE_BURST(id,
+                dbte_mb + (dbte_len * 2048) / 8,  // index 0x800
+                len, size, burst, lock, cache, prot, region, qos, awuser,
+                test_metadata, write_wuser, resp);
+            enable_checker();
+
+            free_all();
+            clr_err();
+
+            fork
+                begin
+                    master_agent_1.AXI4_WRITE_BURST(0, {16'h0800, 48'h5000_7000},
+                        len, size, burst, lock, cache, prot, region, qos, awuser,
+                        write_data, write_wuser, resp);
+                end
+                begin
+                    free_cmd = {1'b1, 1'b0, 13'b0, 1'b1, 16'h0};  // clear_all
+                    ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_cmd, 0, free_cmd, resp);
+                end
+            join
+
+            #100ns;
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt, resp);
+            if (err_cnt[24:18] >= 1) begin
+                $display("  err_mtdt_finv=%0d (OK)", err_cnt[24:18]);
+            end else begin
+                $display("  ERROR: err_mtdt_finv=%0d", err_cnt[24:18]);
+                test_fail_count++; return;
+            end
+
+            // Verify bitmap not leaked
+            disable_checker();
+            test_metadata[103] = 1'b1;
+            master_agent_1.AXI4_WRITE_BURST(id,
+                dbte_mb + (dbte_len * 2048) / 8,
+                len, size, burst, lock, cache, prot, region, qos, awuser,
+                test_metadata, write_wuser, resp);
+            enable_checker();
+
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h3, resp);
+            master_agent_1.AXI4_WRITE_BURST(0, {16'h0800, 48'h5000_7000},
+                len, size, burst, lock, cache, prot, region, qos, awuser,
+                write_data, write_wuser, resp);
+            read_perf_counters();
+            if (perf_miss >= 1) begin
+                $display("  Bitmap not leaked (miss=%0d) — PASS", perf_miss);
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: Bitmap leaked (miss=%0d)", perf_miss);
+                test_fail_count++;
+            end
+        end
+    endtask
+
+    // ================================================================
+    // M1: no_cache=1 + FREE collision
+    // ================================================================
+    task test_no_cache_plus_collision();
+        begin
+            $display("Test 24: no_cache=1 + FREE collision");
+
+            disable_checker();
+            test_metadata = {4'h0, 19'b0, 1'b1/*no_cache=1*/, 1'b1, 1'b1, 1'b0,
+                             5'h1, 48'h5000_8100, 48'h5000_8000};
+            master_agent_1.AXI4_WRITE_BURST(id,
+                dbte_mb + (dbte_len * 2304) / 8,  // index 0x900
+                len, size, burst, lock, cache, prot, region, qos, awuser,
+                test_metadata, write_wuser, resp);
+            enable_checker();
+
+            free_all();
+            clr_err();
+
+            fork
+                begin
+                    master_agent_1.AXI4_WRITE_BURST(0, {16'h0900, 48'h5000_8000},
+                        len, size, burst, lock, cache, prot, region, qos, awuser,
+                        write_data, write_wuser, resp);
+                end
+                begin
+                    #50ns;
+                    free_cmd = {1'b1, 1'b0, 14'b0, 16'h0900};
+                    ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_cmd, 0, free_cmd, resp);
+                end
+            join
+
+            #100ns;
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt, resp);
+            if (err_cnt[24:18] >= 1) begin
+                $display("  err_mtdt_finv=%0d (OK) — PASS", err_cnt[24:18]);
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: err_mtdt_finv=%0d, expected >=1", err_cnt[24:18]);
                 test_fail_count++;
             end
         end
