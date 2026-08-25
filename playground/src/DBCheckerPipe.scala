@@ -37,7 +37,11 @@ class DBCheckerPipeStage0 extends Module with DBCheckerConst { // receive AXI re
   out_pipe.bits.axi_a      := pipe_addr_reg
   out_pipe.bits.axi_a_type := rw_reg
   out_pipe.bits.dbte       := 0.U.asTypeOf(UInt(128.W))
-  out_pipe.bits.bypass     := !ctrl_en.en_dev_bm(pipe_addr_reg.id(4))
+  out_pipe.bits.bypass     := !Mux(
+    pipe_addr_reg.id(4),
+    ctrl_en.en_dev_bm(1),
+    ctrl_en.en_dev_bm(0)
+  )
   out_pipe.bits.err_v      := false.B
   out_pipe.bits.err_req    := 0.U.asTypeOf(new DBCheckerErrReq)
 }
