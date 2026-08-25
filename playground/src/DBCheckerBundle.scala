@@ -4,8 +4,10 @@ import chisel3._
 import chisel3.util._
 import axi._
 trait DBCheckerConst {
-  val RegNum    = 16
+  val RegNum    = 20
   val dbte_num  = 4096
+  val dbte_line_entries = 4
+  val dbte_set_num = dbte_num / dbte_line_entries
 
   // reg index (actual addr is 4 byte aligned, r/w lo-hi)
   // checker enable register  (0x0, RW) : checker enable / disable register
@@ -36,6 +38,15 @@ trait DBCheckerConst {
   val chk_perf_hit     = 0x8 // 0x20
   val chk_perf_miss    = 0x9 // 0x24
   val chk_perf_penalty = 0xA // 0x28
+
+  // refill mode (RW while checker disabled): bit 0, 0=16B, 1=64B
+  val chk_refill_cfg = 0xB // 0x2C
+
+  // 0x30/0x34 remain reserved for the older auto-release experiment.
+  val chk_refill_hist      = 0x10 // 0x40: 4 x 8-bit waiter-count buckets
+  val chk_diff_line_wait   = 0x11 // 0x44
+  val chk_rob_full         = 0x12 // 0x48
+  val chk_refill_bytes     = 0x13 // 0x4C
 
 
   def cmd_op_free    = 0.U(1.W)
@@ -111,6 +122,21 @@ class DBCheckerPtr extends Bundle with DBCheckerConst {
   def get_index: UInt = {
     this.dbte_index
   }
+  def get_cache_addr: UInt = {
+    this.dbte_index(log2Up(dbte_num) - 1, 0)
+  }
+  def get_set: UInt = {
+    this.dbte_index(log2Up(dbte_num) - 1, log2Up(dbte_line_entries))
+  }
+  def get_tag: UInt = {
+    this.dbte_index(15, log2Up(dbte_num))
+  }
+  def get_sector: UInt = {
+    this.dbte_index(log2Up(dbte_line_entries) - 1, 0)
+  }
+  def get_line: UInt = {
+    this.dbte_index(15, log2Up(dbte_line_entries))
+  }
 }
 
 // Pipeline passed structure
@@ -128,17 +154,33 @@ class DBCheckerDBTEReq extends Bundle with DBCheckerConst {
 }
 
 class DBCheckerDBTERsp extends Bundle with DBCheckerConst {
-  val dbte = UInt(128.W)
+  val line_index = UInt((16 - log2Up(dbte_line_entries)).W)
+  val dbte = Vec(dbte_line_entries, UInt(128.W))
+}
+
+class DBCheckerInvalidate extends Bundle with DBCheckerConst {
+  val valid = Bool()
+  val clear_all = Bool()
+  val index = UInt(16.W)
+}
+
+class DBCheckerCacheMeta extends Bundle with DBCheckerConst {
+  val tag = UInt((16 - log2Up(dbte_num)).W)
+  val valid = UInt(dbte_line_entries.W)
 }
 object DBCheckerFetchState extends ChiselEnum {
   val RREQ, RRSP = Value
 }
 object DBCheckerRefillState extends ChiselEnum {
-  val AR, R, WB = Value
+  val AR, R, WB, RSP = Value
 }
 
 class DBCheckerPerfEvent extends Bundle {
   val hit     = Bool()
   val miss    = Bool()
   val penalty = Bool()
+  val refill_waiters = UInt(4.W)
+  val different_line_wait = Bool()
+  val rob_full = Bool()
+  val refill_bytes = UInt(7.W)
 }

@@ -17,14 +17,16 @@ class DBChecker extends Module with DBCheckerConst {
 
 
   // DBTE sram table, 128 bits each
-  val dbte_mem = SRAM(dbte_num, UInt(128.W), 2, 1, 0)
+  val dbte_mem = SRAM(dbte_num, UInt(128.W), 1, 1, 0)
+  val dbte_meta_mem = SRAM(dbte_set_num, new DBCheckerCacheMeta, 2, 1, 0)
 
   // ctrl module
   val ctrl = Module(new DBCheckerCtrl)
   // ctrl.m_axi <> m_axi_ctrl
   ctrl.s_axil <> s_axil_ctrl
   dbte_mem.writePorts(0) <> ctrl.dbte_sram_w
-  dbte_mem.readPorts(0) <> ctrl.dbte_sram_r
+  dbte_meta_mem.writePorts(0) <> ctrl.dbte_meta_sram_w
+  dbte_meta_mem.readPorts(0) <> ctrl.dbte_meta_sram_r
 
   ctrl.m_axi_dbte <> m_axi_dbte
 
@@ -39,13 +41,17 @@ class DBChecker extends Module with DBCheckerConst {
   handler.m_axi_io_rx <> m_axi_io_rx
   handler.s_axi_io_rx <> s_axi_io_rx
   handler.ctrl_reg <> ctrl.ctrl_reg
-  handler.dbte_v_bm <> ctrl.dbte_v_bm
+  handler.invalidate <> ctrl.invalidate
   handler.err_req_r <> ctrl.err_req_r
   handler.err_req_w <> ctrl.err_req_w
-  handler.dbte_sram_r <> dbte_mem.readPorts(1)
+  handler.dbte_sram_r <> dbte_mem.readPorts(0)
+  handler.dbte_meta_sram_r <> dbte_meta_mem.readPorts(1)
   handler.refill_dbte_req_if <> ctrl.refill_dbte_req_if
   ctrl.refill_dbte_rsp_if <> handler.refill_dbte_rsp_if
-  ctrl.perf_event := handler.perf
+  // Performance accounting is not part of request correctness.  Register it
+  // here to keep ROB state out of the control-register counter critical paths.
+  ctrl.perf_event := RegNext(handler.perf,
+                             0.U.asTypeOf(new DBCheckerPerfEvent))
 
   debug_if.ctrl := ctrl.debug_if
   debug_if.flow := handler.debug_if

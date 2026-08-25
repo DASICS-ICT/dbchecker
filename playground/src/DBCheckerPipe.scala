@@ -46,118 +46,230 @@ class DBCheckerPipeStage1 extends Module with DBCheckerConst { // readDBTE
 
   val in_pipe     = IO(Flipped(Decoupled(new DBCheckerPipeMedium)))
   val out_pipe    = IO(Decoupled(new DBCheckerPipeMedium))
-  val dbte_v_bm   = IO(Input(UInt(dbte_num.W)))
+  val invalidate  = IO(Input(new DBCheckerInvalidate))
   val dbte_sram_if = IO(Flipped(new MemoryReadPort(UInt(128.W), log2Up(dbte_num))))
+  val dbte_meta_sram_if = IO(Flipped(new MemoryReadPort(new DBCheckerCacheMeta, log2Up(dbte_set_num))))
   val dbte_refill_req_if = IO(Decoupled(new DBCheckerDBTEReq))
   val dbte_refill_rsp_if = IO(Flipped(Decoupled(new DBCheckerDBTERsp)))
+  val refill_line64 = IO(Input(Bool()))
   val perf = IO(Output(new DBCheckerPerfEvent))
 
-  val fsm_state = RegInit(DBCheckerFetchState.RREQ)
+  // Eight entries preserve request order while allowing requests behind a miss
+  // to be accepted and coalesced into the same 64-byte refill.
+  val robDepth = 8
+  val robPtrWidth = log2Up(robDepth)
+  val robCountWidth = log2Up(robDepth + 1)
+  val stateNew = 0.U(3.W)
+  val stateLookup = 1.U(3.W)
+  val stateMiss = 2.U(3.W)
+  val stateResolved = 3.U(3.W)
+  val stateWait = 4.U(3.W)
 
-  val pipe_v_reg      = RegInit(false.B)
-  val pipe_medium_reg = RegInit(0.U.asTypeOf(new DBCheckerPipeMedium))
+  val robValid = RegInit(VecInit(Seq.fill(robDepth)(false.B)))
+  val robState = RegInit(VecInit(Seq.fill(robDepth)(stateNew)))
+  val robMedium = RegInit(VecInit(Seq.fill(robDepth)(0.U.asTypeOf(new DBCheckerPipeMedium))))
+  val robDbte = RegInit(VecInit(Seq.fill(robDepth)(0.U(128.W))))
+  val robHead = RegInit(0.U(robPtrWidth.W))
+  val robTail = RegInit(0.U(robPtrWidth.W))
+  val robCount = RegInit(0.U(robCountWidth.W))
 
-  when(in_pipe.fire) {
-    pipe_v_reg      := true.B
-    pipe_medium_reg := in_pipe.bits
-  }.elsewhen(out_pipe.fire) {
-    pipe_v_reg      := false.B
-    pipe_medium_reg := 0.U.asTypeOf(new DBCheckerPipeMedium)
+  val refillInflight = RegInit(false.B)
+  val refillIndex = RegInit(0.U(16.W))
+  val refillLine64Reg = RegInit(true.B)
+  val gatherCounter = RegInit(0.U(2.W))
+
+  def entryPtr(entry: DBCheckerPipeMedium): DBCheckerPtr =
+    entry.axi_a.addr.asTypeOf(new DBCheckerPtr)
+
+  // Ordered retirement.
+  val headPtr = entryPtr(robMedium(robHead))
+  out_pipe.valid := robValid(robHead) && robState(robHead) === stateResolved
+  out_pipe.bits := robMedium(robHead)
+  out_pipe.bits.dbte := robDbte(robHead)
+
+  val headInvalid = !robMedium(robHead).bypass && !robDbte(robHead).asTypeOf(new DBCheckerMtdt).v
+  val headErrInfo = Wire(new DBCheckerErrInfo)
+  headErrInfo.err_mtdt_index := headPtr.get_index
+  headErrInfo.err_info := 0.U
+  when(!robMedium(robHead).err_v && headInvalid) {
+    out_pipe.bits.err_v := true.B
+    out_pipe.bits.err_req.typ := err_mtdt_finv
+    out_pipe.bits.err_req.addr := headPtr.asUInt
+    out_pipe.bits.err_req.info := headErrInfo.asUInt
   }
 
-  /*
-    dbte fetch fsm
-    dbte_fetch_req: init state
-      if dbte_v_bm[index] == 0, go to refill_req state;
-      if dbte_v_bm[index] == 1, send dbte_sram_if req and go to fetch_rsp state
-    dbte_fetch_rsp: wait for dbte_sram_if rsp, 
-      then compare inpipe.addr.dbte_index with Cat(dbte_sram_if addr, dbte_sram_if data.index_offset)
-      if equal, output dbte to the next pipeline and go to init state
-      else, go to the dbte_refill_req state to send refill req
-    dbte_refill_req: send refill req to ctrl module, go to refill_rsp state
-    dbte_refill_rsp: wait for refill rsp, then output dbte to the next pipeline and go to init state                            
-  */
+  val retire = out_pipe.fire
+  in_pipe.ready := robCount =/= robDepth.U || retire
+  val enqueue = in_pipe.fire
 
-  val addr_ptr = pipe_medium_reg.axi_a.addr.asTypeOf(new DBCheckerPtr)
+  when(retire) {
+    robValid(robHead) := false.B
+    robState(robHead) := stateNew
+    robHead := robHead + 1.U
+  }
 
-  val dbte_index = addr_ptr.get_index
-  val dbte_index_hi = addr_ptr.get_index_hi
+  switch(Cat(enqueue, retire)) {
+    is("b10".U) { robCount := robCount + 1.U }
+    is("b01".U) { robCount := robCount - 1.U }
+  }
 
-  // Transient Forwarding Logic (Security Safe)
-  val last_refill_data  = Reg(UInt(128.W))
-  val last_refill_index = Reg(UInt(16.W))
-  val refill_hazard_cnt = RegInit(0.U(2.W)) 
+  // One synchronous SRAM lookup is issued per cycle.  Cache identity is
+  // {tag[15:12], set[11:2], sector[1:0]}.
+  val lookupCandidates = VecInit((0 until robDepth).map(i =>
+    robValid(i) && robState(i) === stateNew && !robMedium(i).bypass))
+  val lookupAny = lookupCandidates.asUInt.orR
+  val lookupSlot = PriorityEncoder(lookupCandidates.asUInt)
+  dbte_sram_if.enable := lookupAny
+  dbte_sram_if.address := entryPtr(robMedium(lookupSlot)).get_cache_addr
+  dbte_meta_sram_if.enable := lookupAny
+  dbte_meta_sram_if.address := entryPtr(robMedium(lookupSlot)).get_set
 
+  val lookupRspValid = RegNext(lookupAny, false.B)
+  val lookupRspSlot = RegEnable(lookupSlot, lookupAny)
+  when(lookupAny) {
+    robState(lookupSlot) := stateLookup
+  }
+
+  val lookupPtr = entryPtr(robMedium(lookupRspSlot))
+  val lookupMtdt = dbte_sram_if.data.asTypeOf(new DBCheckerMtdt)
+  val lookupMeta = dbte_meta_sram_if.data
+  val lookupHit = lookupMeta.valid(lookupPtr.get_sector) &&
+                  lookupMeta.tag === lookupPtr.get_tag &&
+                  lookupMtdt.v && lookupMtdt.index_offset === lookupPtr.get_index(3, 0)
+  when(lookupRspValid && robValid(lookupRspSlot) && robState(lookupRspSlot) === stateLookup) {
+    when(lookupHit) {
+      robDbte(lookupRspSlot) := dbte_sram_if.data
+      robState(lookupRspSlot) := stateResolved
+    }.otherwise {
+      robState(lookupRspSlot) := stateMiss
+    }
+  }
+
+  // A single refill MSHR is used in this phase.  At AR.fire all requests already
+  // present for that line become waiters; later no-cache requests must refill.
+  val missCandidates = VecInit((0 until robDepth).map(i =>
+    robValid(i) && robState(i) === stateMiss))
+  val missAny = missCandidates.asUInt.orR
+  val missSlot = PriorityEncoder(missCandidates.asUInt)
+  val missPtr = entryPtr(robMedium(missSlot))
+  dbte_refill_req_if.valid := missAny && !refillInflight && gatherCounter.andR
+  dbte_refill_req_if.bits.index := missPtr.get_index
+
+  when(refillInflight || !missAny) {
+    gatherCounter := 0.U
+  }.elsewhen(!gatherCounter.andR) {
+    gatherCounter := gatherCounter + 1.U
+  }
+
+  when(dbte_refill_req_if.fire) {
+    refillInflight := true.B
+    refillIndex := missPtr.get_index
+    refillLine64Reg := refill_line64
+    gatherCounter := 0.U
+    for (i <- 0 until robDepth) {
+      val ptr = entryPtr(robMedium(i))
+      val sameFill = Mux(refill_line64,
+                         ptr.get_line === missPtr.get_line,
+                         ptr.get_index === missPtr.get_index)
+      when(robValid(i) && robState(i) =/= stateResolved &&
+           !robMedium(i).bypass && ptr.get_index =/= 0.U &&
+           sameFill) {
+        robState(i) := stateWait
+      }
+    }
+  }
+
+  dbte_refill_rsp_if.ready := refillInflight
+  val refillServedVec = VecInit((0 until robDepth).map(i => {
+    val ptr = entryPtr(robMedium(i))
+    val sameFill = Mux(refillLine64Reg,
+                       ptr.get_line === dbte_refill_rsp_if.bits.line_index,
+                       ptr.get_index === refillIndex)
+    val returnedMtdt = dbte_refill_rsp_if.bits.dbte(ptr.get_sector).asTypeOf(new DBCheckerMtdt)
+    val lateCacheUse = returnedMtdt.v && !returnedMtdt.no_cache &&
+                       returnedMtdt.index_offset === ptr.get_index(3, 0)
+    robValid(i) && robState(i) =/= stateResolved && sameFill &&
+      (robState(i) === stateWait || lateCacheUse)
+  }))
+  val refillServedCount = PopCount(refillServedVec)
   when(dbte_refill_rsp_if.fire) {
-    refill_hazard_cnt := 3.U 
-    last_refill_data  := dbte_refill_rsp_if.bits.dbte
-    last_refill_index := dbte_index 
-  }.elsewhen(refill_hazard_cnt > 0.U) {
-    refill_hazard_cnt := refill_hazard_cnt - 1.U
-  }
-
-  dbte_sram_if.enable  := true.B
-  dbte_sram_if.address := Mux(in_pipe.fire, in_pipe.bits, pipe_medium_reg).axi_a.addr.asTypeOf(new DBCheckerPtr).get_index_hi
-  
-  val sram_out = dbte_sram_if.data
-  val use_forwarding = (refill_hazard_cnt > 0.U) && (dbte_index === last_refill_index)
-
-  val cached_dbte = Mux(use_forwarding, last_refill_data, sram_out)
-  val fetch_dbte_valid = dbte_v_bm(dbte_index_hi) && dbte_index === Cat(dbte_index_hi, cached_dbte.asTypeOf(new DBCheckerMtdt).index_offset)
-
-  dbte_refill_req_if.bits.index := dbte_index
-
-  dbte_refill_req_if.valid := false.B
-  dbte_refill_rsp_if.ready := false.B
-
-  switch(fsm_state) {
-    is(DBCheckerFetchState.RREQ) {
-      dbte_refill_req_if.valid := pipe_v_reg && !fetch_dbte_valid && !pipe_medium_reg.bypass
-      when(dbte_refill_req_if.fire) {
-        fsm_state := DBCheckerFetchState.RRSP
+    for (i <- 0 until robDepth) {
+      val ptr = entryPtr(robMedium(i))
+      val sameFill = Mux(refillLine64Reg,
+                         ptr.get_line === dbte_refill_rsp_if.bits.line_index,
+                         ptr.get_index === refillIndex)
+      when(robValid(i) && robState(i) =/= stateResolved &&
+           sameFill) {
+        when(robState(i) === stateWait) {
+          robDbte(i) := dbte_refill_rsp_if.bits.dbte(ptr.get_sector)
+          robState(i) := stateResolved
+        }.otherwise {
+          // Arrived after AR.fire: retry the cache.  A no-cache sector will miss
+          // again, so refill data is never retained beyond the frozen waiters.
+          robState(i) := stateNew
+        }
       }
     }
-    is(DBCheckerFetchState.RRSP) {
-      when(out_pipe.fire) {
-        dbte_refill_rsp_if.ready := true.B
-        fsm_state := DBCheckerFetchState.RREQ
+    refillInflight := false.B
+  }
+
+  // FREE invalidates matching queued work as well as the cache/MSHR.  This is
+  // placed after lookup/refill resolution so FREE has final priority.
+  when(invalidate.valid) {
+    for (i <- 0 until robDepth) {
+      val ptr = entryPtr(robMedium(i))
+      when(robValid(i) && !robMedium(i).bypass &&
+           (invalidate.clear_all || ptr.get_index === invalidate.index)) {
+        val invalidMtdt = WireInit(robDbte(i).asTypeOf(new DBCheckerMtdt))
+        invalidMtdt.v := false.B
+        robDbte(i) := invalidMtdt.asUInt
+        robState(i) := stateResolved
       }
     }
   }
 
-  in_pipe.ready := !pipe_v_reg || out_pipe.fire
-
-  out_pipe.valid := pipe_v_reg &&  (fsm_state === DBCheckerFetchState.RREQ && (fetch_dbte_valid || pipe_medium_reg.bypass) || // use cached dbte or bypass
-                                    fsm_state === DBCheckerFetchState.RRSP && dbte_refill_rsp_if.valid) // use refilled dbte
-  out_pipe.bits := pipe_medium_reg
-  out_pipe.bits.dbte := Mux(fsm_state === DBCheckerFetchState.RRSP, dbte_refill_rsp_if.bits.dbte, cached_dbte)
-
-  val err_finv = !pipe_medium_reg.bypass && fsm_state === DBCheckerFetchState.RRSP && !dbte_refill_rsp_if.bits.dbte.asTypeOf(new DBCheckerMtdt).v
-  val err_info = Wire(new DBCheckerErrInfo)
-  err_info.err_mtdt_index := addr_ptr.get_index
-  err_info.err_info       := 0.U // metadata invalid, no extra info
-
-  when(!pipe_medium_reg.err_v && err_finv) {
-    out_pipe.bits.err_v        := err_finv
-    out_pipe.bits.err_req.typ  := err_mtdt_finv
-    out_pipe.bits.err_req.addr := addr_ptr.asUInt
-    out_pipe.bits.err_req.info := err_info.asUInt
+  // Enqueue is last so a simultaneous retire/full enqueue correctly reuses the
+  // same physical slot.  Metadata ID 0 is rejected without issuing AXI DBTE AR.
+  when(enqueue) {
+    val newPtr = entryPtr(in_pipe.bits)
+    val invalidNew = invalidate.valid &&
+                     (invalidate.clear_all || newPtr.get_index === invalidate.index)
+    robValid(robTail) := true.B
+    robMedium(robTail) := in_pipe.bits
+    robDbte(robTail) := 0.U
+    when(in_pipe.bits.bypass) {
+      robState(robTail) := stateResolved
+    }.elsewhen(newPtr.get_index === 0.U || invalidNew) {
+      robState(robTail) := stateResolved
+    }.elsewhen(dbte_refill_req_if.fire &&
+               Mux(refill_line64,
+                   newPtr.get_line === missPtr.get_line,
+                   newPtr.get_index === missPtr.get_index)) {
+      robState(robTail) := stateWait
+    }.otherwise {
+      robState(robTail) := stateNew
+    }
+    robTail := robTail + 1.U
   }
 
-  // perf events
-  perf.hit := fsm_state === DBCheckerFetchState.RREQ &&
-              !pipe_medium_reg.bypass && out_pipe.fire
-
-  val miss_pulse = dbte_refill_req_if.valid && !RegNext(dbte_refill_req_if.valid, false.B)
-  perf.miss := miss_pulse
-
-  val miss_inflight = RegInit(false.B)
-  when(miss_pulse) {
-    miss_inflight := true.B
-  }.elsewhen(fsm_state === DBCheckerFetchState.RRSP && dbte_refill_rsp_if.valid) {
-    miss_inflight := false.B
-  }
-  perf.penalty := miss_inflight
+  perf.hit := lookupRspValid && robValid(lookupRspSlot) &&
+              robState(lookupRspSlot) === stateLookup && lookupHit
+  perf.miss := dbte_refill_req_if.fire
+  perf.penalty := refillInflight
+  perf.refill_waiters := Mux(dbte_refill_rsp_if.fire, refillServedCount, 0.U)
+  val differentLineQueued = VecInit((0 until robDepth).map(i => {
+    val ptr = entryPtr(robMedium(i))
+    val sameFill = Mux(refillLine64Reg,
+                       ptr.get_line === refillIndex(15, 2),
+                       ptr.get_index === refillIndex)
+    robValid(i) && robState(i) =/= stateResolved &&
+      !robMedium(i).bypass && !sameFill
+  })).asUInt.orR
+  perf.different_line_wait := refillInflight && differentLineQueued
+  perf.rob_full := robCount === robDepth.U && !retire
+  perf.refill_bytes := Mux(dbte_refill_req_if.fire,
+                           Mux(refill_line64, 64.U, 16.U),
+                           0.U)
 
 }
 
@@ -353,10 +465,11 @@ class DBCheckerPipeline extends Module with DBCheckerConst {
   val m_axi_io_rx  = IO(new AxiMaster(64, 128, idWidth = 5))
   val s_axi_io_rx  = IO(new AxiSlave(64, 128, idWidth = 5))
   val ctrl_reg     = IO(Input(Vec(RegNum, UInt(32.W))))
-  val dbte_v_bm    = IO(Input(UInt(dbte_num.W)))
+  val invalidate   = IO(Input(new DBCheckerInvalidate))
   val err_req_r    = IO(Decoupled(new DBCheckerErrReq))
   val err_req_w    = IO(Decoupled(new DBCheckerErrReq))
   val dbte_sram_r  = IO(Flipped(new MemoryReadPort(UInt(128.W), log2Up(dbte_num))))
+  val dbte_meta_sram_r = IO(Flipped(new MemoryReadPort(new DBCheckerCacheMeta, log2Up(dbte_set_num))))
   val refill_dbte_req_if = IO(Decoupled(new DBCheckerDBTEReq))
   val refill_dbte_rsp_if = IO(Flipped(Decoupled(new DBCheckerDBTERsp)))
   val debug_if     = IO(Output(UInt(128.W)))
@@ -377,10 +490,12 @@ class DBCheckerPipeline extends Module with DBCheckerConst {
   stage0.ctrl_en := ctrl_reg(chk_en).asTypeOf(new DBCheckerEnCtl)
 
   stage1.in_pipe <> stage0.out_pipe
-  stage1.dbte_v_bm := dbte_v_bm
+  stage1.invalidate := invalidate
   stage1.dbte_sram_if <> dbte_sram_r
+  stage1.dbte_meta_sram_if <> dbte_meta_sram_r
   stage1.dbte_refill_req_if <> refill_dbte_req_if
   stage1.dbte_refill_rsp_if <> refill_dbte_rsp_if
+  stage1.refill_line64 := ctrl_reg(chk_refill_cfg)(0)
 
   stage2.in_pipe <> stage1.out_pipe
 
