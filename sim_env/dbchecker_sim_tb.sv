@@ -6,6 +6,61 @@ import test_design_axi_vip_input_1_0_pkg::*;
 import test_design_axi_vip_output_0_pkg::*;
 import test_design_axi_vip_ctrl_0_pkg::*;
 
+class dbchecker_delayed_slv_mem_t extends test_design_axi_vip_output_0_slv_mem_t;
+    bit inject_rresp = 0;
+    bit inject_len = 0;
+    xil_axi_ulong fault_addr;
+    xil_axi_uint fault_beat;
+    xil_axi_len_t fault_len;
+    xil_axi_resp_t fault_resp;
+    function new(string name, virtual interface axi_vip_if #(
+        0, 32, 128, 128, 6, 6, 0, 0, 0, 0, 0,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) vif);
+        super.new(name, vif);
+    endfunction
+    function void set_arready_gen_public(axi_ready_gen ready_gen);
+        this.rd_driver.set_arready_gen(ready_gen);
+    endfunction
+    function void inject_rresp_once(xil_axi_ulong addr, xil_axi_uint beat,
+                                    xil_axi_resp_t injected_resp);
+        fault_addr = addr;
+        fault_beat = beat;
+        fault_resp = injected_resp;
+        inject_rresp = 1;
+    endfunction
+    function void inject_len_once(xil_axi_ulong addr, xil_axi_len_t injected_len);
+        fault_addr = addr;
+        fault_len = injected_len;
+        inject_len = 1;
+    endfunction
+
+    protected virtual task put_rd_response();
+        axi_transaction rd_reactive;
+        axi_transaction rd_send;
+        xil_axi_len_t original_len;
+        forever begin
+            this.rd_driver.get_rd_reactive(rd_reactive);
+            rd_send = this.mem_model.fill_rd_reactive(rd_reactive);
+            if (inject_rresp && rd_reactive.get_addr() == fault_addr) begin
+                rd_send.clr_all_resp_okay();
+                rd_send.set_rresp(fault_beat, fault_resp);
+                inject_rresp = 0;
+            end
+            if (inject_len && rd_reactive.get_addr() == fault_addr) begin
+                original_len = rd_send.get_len();
+                rd_send.set_len(fault_len);
+                rd_send.size_rd_beats();
+                for (xil_axi_uint beat = original_len + 1; beat <= fault_len; beat++) begin
+                    rd_send.set_data_beat(beat, '0);
+                    rd_send.set_rresp(beat, XIL_AXI_RESP_OKAY);
+                end
+                inject_len = 0;
+            end
+            this.rd_driver.send(rd_send);
+        end
+    endtask
+endclass
+
 module dbchecker_sim_tb();
     // DBChecker寄存器地址
     localparam reg_base = 32'h4000_0000;
@@ -20,6 +75,11 @@ module dbchecker_sim_tb();
     localparam reg_chk_perf_hit     = 32'h0000_0020;  // reg 8
     localparam reg_chk_perf_miss    = 32'h0000_0024;  // reg 9
     localparam reg_chk_perf_penalty = 32'h0000_0028;  // reg 10
+    localparam reg_chk_refill_cfg   = 32'h0000_002C;  // reg 11
+    localparam reg_chk_refill_hist  = 32'h0000_0040;  // reg 16
+    localparam reg_chk_diff_wait    = 32'h0000_0044;  // reg 17
+    localparam reg_chk_rob_full     = 32'h0000_0048;  // reg 18
+    localparam reg_chk_refill_bytes = 32'h0000_004C;  // reg 19
     localparam dbte_mb = 48'h4000_2000;
     localparam dbte_len = 128;
     
@@ -40,7 +100,7 @@ module dbchecker_sim_tb();
     test_design_axi_vip_input_0_0_mst_t master_agent_0;
     test_design_axi_vip_input_1_0_mst_t master_agent_1;
     test_design_axi_vip_ctrl_0_mst_t ctrl_agent;
-    test_design_axi_vip_output_0_slv_mem_t slave_agent;
+    dbchecker_delayed_slv_mem_t slave_agent;
     
     // 添加测试变量
     bit [63:0] encrypted_metadata;
@@ -53,6 +113,7 @@ module dbchecker_sim_tb();
     bit [31:0] err_info;
     bit [31:0] val0, val1, val2, val3;
     bit [31:0] perf_hit, perf_miss, perf_penalty;
+    bit [31:0] refill_hist, diff_wait_cycles, rob_full_cycles, refill_bytes;
     bit [64:0] free_cmd;
 
     bit [31:0] physical_ptr_array [31:0];
@@ -79,6 +140,36 @@ module dbchecker_sim_tb();
     // 添加测试控制变量
     integer test_pass_count = 0;
     integer test_fail_count = 0;
+    integer dbte_ar_count = 0;
+    integer dbte_ar_protocol_errors = 0;
+    bit [47:0] last_dbte_araddr;
+    bit expect_line64 = 1;
+
+    // Directly check the DBTE AXI port.  Every refill in this design must be a
+    // four-beat, 64-byte aligned INCR burst of 16-byte beats.
+    always @(posedge aclk) begin
+        if (aresetn && UUT.dbchecker_wrapper_0_m_axi_dbte_ARVALID &&
+                       UUT.dbchecker_wrapper_0_m_axi_dbte_ARREADY) begin
+            dbte_ar_count++;
+            last_dbte_araddr = UUT.dbchecker_wrapper_0_m_axi_dbte_ARADDR;
+            if (UUT.dbchecker_wrapper_0_m_axi_dbte_ARSIZE != 3'h4 ||
+                UUT.dbchecker_wrapper_0_m_axi_dbte_ARBURST != 2'h1 ||
+                (expect_line64 &&
+                 (UUT.dbchecker_wrapper_0_m_axi_dbte_ARLEN != 8'h3 ||
+                  UUT.dbchecker_wrapper_0_m_axi_dbte_ARADDR[5:0] != 6'h0)) ||
+                (!expect_line64 &&
+                 (UUT.dbchecker_wrapper_0_m_axi_dbte_ARLEN != 8'h0 ||
+                  UUT.dbchecker_wrapper_0_m_axi_dbte_ARADDR[3:0] != 4'h0))) begin
+                $display("ERROR: malformed DBTE refill AR addr=0x%0h len=%0d size=%0d burst=%0d",
+                    UUT.dbchecker_wrapper_0_m_axi_dbte_ARADDR,
+                    UUT.dbchecker_wrapper_0_m_axi_dbte_ARLEN,
+                    UUT.dbchecker_wrapper_0_m_axi_dbte_ARSIZE,
+                    UUT.dbchecker_wrapper_0_m_axi_dbte_ARBURST);
+                dbte_ar_protocol_errors++;
+                test_fail_count++;
+            end
+        end
+    end
     
     // Reset
     initial begin
@@ -98,6 +189,7 @@ module dbchecker_sim_tb();
         slave_agent = new("slave agent", UUT.axi_vip_output.inst.IF);
 
         // Start the agents
+        master_agent_0.start_master();
         master_agent_1.start_master();
         ctrl_agent.start_master();
         slave_agent.start_slave();
@@ -162,6 +254,16 @@ module dbchecker_sim_tb();
         test_collision_early();
         test_collision_clear_all();
         test_no_cache_plus_collision();
+        test_64b_sector_refill();
+        test_64b_no_cache_waiters();
+        test_reserved_id_zero();
+        test_last_id_refill();
+        test_16b_compat_mode();
+        test_first_line_refill();
+        test_mixed_sector_modes();
+        test_refill_rresp_error();
+        test_refill_early_rlast();
+        test_refill_late_rlast();
 
         // 完成测试
         #100ns;
@@ -179,12 +281,12 @@ module dbchecker_sim_tb();
         begin
             $display("Pre-filling DBTE memory with test metadata");
             // metadata format |index_offset(4)|reserved(19)|no_cache(1)|v(1)|w(1)|r(1)|dev_id(5)|bound_hi(48)|bound_lo(48)|
-            // 16bit index: 0x0, 12bit index: 0x0, 4bit index offset: 0x0
+            // 16bit index: 0x4, 12bit index: 0x4, 4bit index offset: 0x4
             // this metadata is for write valid / write out of bound / swap and free test
-            test_metadata = {4'h0, 19'b0, 1'b0, 1'b1, 1'b1, 1'b0, 5'h1, 48'h4000_0040, 48'h4000_0000};
+            test_metadata = {4'h4, 19'b0, 1'b0, 1'b1, 1'b1, 1'b0, 5'h1, 48'h4000_0040, 48'h4000_0000};
             master_agent_1.AXI4_WRITE_BURST(
                 id,
-                dbte_mb, // dbte index 0x0
+                dbte_mb + (dbte_len * 4) / 8, // dbte index 0x4
                 len,
                 size,
                 burst,
@@ -201,7 +303,7 @@ module dbchecker_sim_tb();
 
             master_agent_1.AXI4_READ_BURST(
                 id,
-                dbte_mb, // dbte index 0x0
+                dbte_mb + (dbte_len * 4) / 8, // dbte index 0x4
                 len,
                 size,
                 burst,
@@ -476,7 +578,7 @@ module dbchecker_sim_tb();
                 resp
             );
             
-            physical_pointer = {16'h0, 48'h4000_0000};
+            physical_pointer = {16'h4, 48'h4000_0000};
 
             $display("Allocated buffer physical pointer: 0x%0h", physical_pointer);
             
@@ -587,7 +689,7 @@ module dbchecker_sim_tb();
             
             // 准备测试数据
             write_data = 64'hE9E9E9E9E9E9E9E9;
-            physical_pointer = {16'h00, 48'h4000_0000};
+            physical_pointer = {16'h4, 48'h4000_0000};
             // 尝试读取只写缓冲区
             master_agent_1.AXI4_READ_BURST(
                 id,
@@ -625,7 +727,7 @@ module dbchecker_sim_tb();
             );
             
             // | v(1) | opcode(1) | imm(30) |
-            test_cmd = {1'b1, 1'b0, 13'b0, 1'b0, 16'h0}; // free dbet cache中的表项
+            test_cmd = {1'b1, 1'b0, 13'b0, 1'b0, 16'h4}; // free DBTE cache entry 4
 
             ctrl_agent.AXI4LITE_WRITE_BURST(
                 reg_base + reg_chk_cmd, // chk_cmd地址
@@ -636,7 +738,7 @@ module dbchecker_sim_tb();
 
             // 准备测试数据
             write_data = 64'hF0F0F0F0F0F0F0F0;
-            physical_pointer = {16'h0, 48'h4000_0000};
+            physical_pointer = {16'h4, 48'h4000_0000};
             // 尝试访问已释放的缓冲区
             master_agent_1.AXI4_WRITE_BURST(
                 id,
@@ -680,7 +782,7 @@ module dbchecker_sim_tb();
             test_metadata = 128'b0;
             master_agent_1.AXI4_WRITE_BURST(
                 id,
-                {16'h10, dbte_mb}, // dbte index 0
+                {16'h10, dbte_mb + (dbte_len * 4) / 8}, // backing DBTE index 4
                 len,
                 size,
                 burst,
@@ -695,7 +797,7 @@ module dbchecker_sim_tb();
                 resp
             );
 
-            test_cmd = {1'b1, 1'b0, 13'b0, 1'b0, 16'h0}; // free dbet cache中的表项
+            test_cmd = {1'b1, 1'b0, 13'b0, 1'b0, 16'h4}; // free DBTE cache entry 4
 
             ctrl_agent.AXI4LITE_WRITE_BURST(
                 reg_base + reg_chk_cmd, // chk_cmd地址
@@ -708,7 +810,7 @@ module dbchecker_sim_tb();
             
             // 准备测试数据
             write_data = 64'hF0F0F0F0F0F0F0F0;
-            physical_pointer = {16'h0, 48'h4000_0000};
+            physical_pointer = {16'h4, 48'h4000_0000};
             // 尝试访问已释放的缓冲区
             master_agent_1.AXI4_WRITE_BURST(
                 id,
@@ -1207,12 +1309,12 @@ module dbchecker_sim_tb();
                 test_fail_count++;
             end
 
-            // --- 重新填充被test_free_operation覆盖的index 0 metadata ---
+            // --- 重新填充被test_free_operation覆盖的index 4 metadata ---
             // 利用index 0x10的metadata (dev_id=1, bounds覆盖dbte_mb, w=1)
             // 使用id=16使id(4)=1匹配dev_id，避免dev_err导致地址重定向
-            test_metadata = {4'h0, 19'b0, 1'b0, 1'b1, 1'b1, 1'b0, 5'h1, 48'h4000_0040, 48'h4000_0000};
+            test_metadata = {4'h4, 19'b0, 1'b0, 1'b1, 1'b1, 1'b0, 5'h1, 48'h4000_0040, 48'h4000_0000};
             master_agent_1.AXI4_WRITE_BURST(
-                16, {16'h0010, dbte_mb}, len, size, burst, lock, cache, prot,
+                16, {16'h0010, dbte_mb + (dbte_len * 4) / 8}, len, size, burst, lock, cache, prot,
                 region, qos, awuser, test_metadata, write_wuser, resp
             );
 
@@ -1220,13 +1322,13 @@ module dbchecker_sim_tb();
             // free cache entry 0 先确保miss
             test_cmd = {1'b1, 1'b0, 13'b0, 1'b1, 16'h0}; // free all
             ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_cmd, 0, test_cmd, resp);
-            #200ns;
+            #22000ns;
 
             // 重新写chk_en清零perf计数器
             ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h0000_0003, resp);
 
-            // 访问index 0x0，cache已被清空，应触发refill (miss)
-            physical_pointer = {16'h0, 48'h4000_0000};
+            // 访问index 0x4，cache已被清空，应触发refill (miss)
+            physical_pointer = {16'h4, 48'h4000_0000};
             write_data = 64'hABCDABCDABCDABCD;
             master_agent_1.AXI4_WRITE_BURST(
                 id, physical_pointer, len, size, burst, lock, cache, prot,
@@ -1487,7 +1589,7 @@ module dbchecker_sim_tb();
     task free_all();
         free_cmd = {1'b1, 1'b0, 13'b0, 1'b1, 16'h0};
         ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_cmd, 0, free_cmd, resp);
-        #200ns;
+        #22000ns;
     endtask
 
     task clr_err();
@@ -1500,6 +1602,17 @@ module dbchecker_sim_tb();
         ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_hit,     0, perf_hit,     resp);
         ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_miss,    0, perf_miss,    resp);
         ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_perf_penalty, 0, perf_penalty, resp);
+    endtask
+
+    task read_refill_stats();
+        ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_refill_hist,
+            0, refill_hist, resp);
+        ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_diff_wait,
+            0, diff_wait_cycles, resp);
+        ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_rob_full,
+            0, rob_full_cycles, resp);
+        ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_refill_bytes,
+            0, refill_bytes, resp);
     endtask
 
     // ================================================================
@@ -1913,6 +2026,8 @@ module dbchecker_sim_tb();
                 end
             join
 
+            // The rejected DMA can finish before the 1024-set clear walk.
+            #22000ns;
             #100ns;
             ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt, resp);
             if (err_cnt[24:18] >= 1) begin
@@ -1987,6 +2102,487 @@ module dbchecker_sim_tb();
                 $display("  ERROR: err_mtdt_finv=%0d, expected >=1", err_cnt[24:18]);
                 test_fail_count++;
             end
+        end
+    endtask
+
+    task program_dbte(
+        input bit [15:0] index,
+        input bit no_cache,
+        input bit valid,
+        input bit [4:0] dev_id,
+        input bit [47:0] bound_lo,
+        input bit [47:0] bound_hi
+    );
+        bit [127:0] metadata_local;
+        begin
+            metadata_local = {index[3:0], 19'b0, no_cache, valid, 1'b1, 1'b0,
+                              dev_id, bound_hi, bound_lo};
+            master_agent_1.AXI4_WRITE_BURST(0,
+                dbte_mb + (index * 16), len, size, burst, lock, cache, prot,
+                region, qos, awuser, metadata_local, write_wuser, resp);
+        end
+    endtask
+
+    task test_64b_sector_refill();
+        integer ar_before;
+        xil_axi_resp_t resp0, resp1, resp2, resp3;
+        bit [8*4096-1:0] wdata0, wdata1, wdata2, wdata3;
+        begin
+            $display("Test 25: four cacheable sectors share one 64B refill");
+            disable_checker();
+            program_dbte(16'h0a04, 0, 1, 1, 48'h6000_0000, 48'h6000_1000);
+            program_dbte(16'h0a05, 0, 1, 1, 48'h6000_0000, 48'h6000_1000);
+            program_dbte(16'h0a06, 0, 1, 1, 48'h6000_0000, 48'h6000_1000);
+            program_dbte(16'h0a07, 0, 1, 1, 48'h6000_0000, 48'h6000_1000);
+            enable_checker();
+            free_all();
+            clr_err();
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h3, resp);
+            ar_before = dbte_ar_count;
+            wdata0 = {512{8'ha1}};
+            wdata1 = {512{8'ha2}};
+            wdata2 = {512{8'ha3}};
+            wdata3 = {512{8'ha4}};
+
+            fork
+                master_agent_1.AXI4_WRITE_BURST(0, {16'h0a04, 48'h6000_0000}, len, size,
+                    burst, lock, cache, prot, region, qos, awuser, wdata0, write_wuser, resp0);
+                master_agent_1.AXI4_WRITE_BURST(1, {16'h0a05, 48'h6000_0040}, len, size,
+                    burst, lock, cache, prot, region, qos, awuser, wdata1, write_wuser, resp1);
+                master_agent_1.AXI4_WRITE_BURST(2, {16'h0a06, 48'h6000_0080}, len, size,
+                    burst, lock, cache, prot, region, qos, awuser, wdata2, write_wuser, resp2);
+                master_agent_1.AXI4_WRITE_BURST(3, {16'h0a07, 48'h6000_00c0}, len, size,
+                    burst, lock, cache, prot, region, qos, awuser, wdata3, write_wuser, resp3);
+            join
+
+            read_perf_counters();
+            read_refill_stats();
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt, resp);
+            if (dbte_ar_count == ar_before + 1 && perf_miss == 1 && err_cnt == 0 &&
+                refill_hist[7:0] + refill_hist[15:8] + refill_hist[23:16] +
+                    refill_hist[31:24] == 1 && refill_bytes == 64) begin
+                $display("  one DBTE AR served four requests — PASS");
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: DBTE AR %0d->%0d miss=%0d err=0x%0h",
+                    ar_before, dbte_ar_count, perf_miss, err_cnt);
+                test_fail_count++;
+            end
+
+            master_agent_1.AXI4_WRITE_BURST(0, {16'h0a04, 48'h6000_0100}, len, size,
+                burst, lock, cache, prot, region, qos, awuser, wdata0, write_wuser, resp0);
+            read_perf_counters();
+            if (dbte_ar_count == ar_before + 1 && perf_hit >= 1) begin
+                $display("  cached sector re-access hit — PASS");
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: cached re-access AR=%0d hit=%0d", dbte_ar_count, perf_hit);
+                test_fail_count++;
+            end
+        end
+    endtask
+
+    task test_64b_no_cache_waiters();
+        integer ar_before, batch_refills;
+        xil_axi_resp_t resp0, resp1, resp2, resp3;
+        bit [8*4096-1:0] wdata0, wdata1, wdata2, wdata3;
+        axi_ready_gen arready_delay, arready_normal;
+        begin
+            $display("Test 26: no-cache sectors serve only frozen waiters");
+            disable_checker();
+            program_dbte(16'h0a08, 1, 1, 0, 48'h6100_0000, 48'h6100_1000);
+            program_dbte(16'h0a09, 1, 1, 0, 48'h6100_0000, 48'h6100_1000);
+            program_dbte(16'h0a0a, 1, 1, 1, 48'h6100_0000, 48'h6100_1000);
+            program_dbte(16'h0a0b, 1, 1, 1, 48'h6100_0000, 48'h6100_1000);
+            enable_checker();
+            free_all();
+            clr_err();
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h3, resp);
+            ar_before = dbte_ar_count;
+            wdata0 = {512{8'hb1}};
+            wdata1 = {512{8'hb2}};
+            wdata2 = {512{8'hb3}};
+            wdata3 = {512{8'hb4}};
+
+            // Delay the next slave AR handshake so all four requests are
+            // demonstrably present before AR.fire.
+            arready_delay = new("dbte_arready_delay");
+            arready_delay.set_ready_policy(XIL_AXI_READY_GEN_AFTER_VALID_SINGLE);
+            arready_delay.set_low_time(20);
+            arready_normal = new("dbte_arready_normal");
+            arready_normal.set_ready_policy(XIL_AXI_READY_GEN_NO_BACKPRESSURE);
+            slave_agent.set_arready_gen_public(arready_delay);
+            slave_agent.set_arready_gen_public(arready_normal);
+            fork
+                master_agent_0.AXI4_WRITE_BURST(0, {16'h0a08, 48'h6100_0000}, len, size,
+                    burst, lock, cache, prot, region, qos, awuser, wdata0, write_wuser, resp0);
+                master_agent_0.AXI4_WRITE_BURST(1, {16'h0a09, 48'h6100_0040}, len, size,
+                    burst, lock, cache, prot, region, qos, awuser, wdata1, write_wuser, resp1);
+                master_agent_1.AXI4_WRITE_BURST(2, {16'h0a0a, 48'h6100_0080}, len, size,
+                    burst, lock, cache, prot, region, qos, awuser, wdata2, write_wuser, resp2);
+                master_agent_1.AXI4_WRITE_BURST(3, {16'h0a0b, 48'h6100_00c0}, len, size,
+                    burst, lock, cache, prot, region, qos, awuser, wdata3, write_wuser, resp3);
+            join
+
+            read_perf_counters();
+            batch_refills = dbte_ar_count - ar_before;
+            // The two AXI VIP masters can present the four requests as more
+            // than one AR-time batch.  Require sharing within at least one
+            // batch, but never count a transient no-cache result as a hit.
+            if (batch_refills >= 1 && batch_refills < 4 &&
+                perf_miss == batch_refills && perf_hit == 0) begin
+                $display("  four requests formed %0d frozen waiter batches — PASS",
+                    batch_refills);
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: transient line AR %0d->%0d miss=%0d hit=%0d",
+                    ar_before, dbte_ar_count, perf_miss, perf_hit);
+                test_fail_count++;
+            end
+
+            master_agent_1.AXI4_WRITE_BURST(0, {16'h0a08, 48'h6100_0100}, len, size,
+                burst, lock, cache, prot, region, qos, awuser, wdata0, write_wuser, resp0);
+            read_perf_counters();
+            read_refill_stats();
+            if (dbte_ar_count == ar_before + batch_refills + 1 &&
+                perf_miss == batch_refills + 1 && perf_hit == 0 &&
+                refill_hist[7:0] + refill_hist[15:8] + refill_hist[23:16] +
+                    refill_hist[31:24] == batch_refills + 1 &&
+                refill_bytes == (batch_refills + 1) * 64) begin
+                $display("  later request refilled again — PASS");
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: later no-cache request AR=%0d miss=%0d",
+                    dbte_ar_count, perf_miss);
+                test_fail_count++;
+            end
+        end
+    endtask
+
+    task test_reserved_id_zero();
+        integer ar_before;
+        begin
+            $display("Test 27: metadata ID 0 is rejected without DBTE AXI read");
+            free_all();
+            clr_err();
+            ar_before = dbte_ar_count;
+            master_agent_1.AXI4_WRITE_BURST(0, {16'h0000, 48'h6200_0000}, len, size,
+                burst, lock, cache, prot, region, qos, awuser, write_data, write_wuser, resp);
+            #100ns;
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt, resp);
+            if (dbte_ar_count == ar_before && err_cnt[24:18] >= 1) begin
+                $display("  ID 0 rejected locally — PASS");
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: ID0 DBTE AR %0d->%0d invalid_err=%0d",
+                    ar_before, dbte_ar_count, err_cnt[24:18]);
+                test_fail_count++;
+            end
+        end
+    endtask
+
+    task test_last_id_refill();
+        integer ar_before;
+        bit [47:0] expected_addr;
+        bit [127:0] expected_metadata;
+        begin
+            $display("Test 28: ID 0xffff refills aligned line 0xfffc");
+            disable_checker();
+            program_dbte(16'hfffc, 0, 1, 1, 48'h6300_0000, 48'h6300_1000);
+            program_dbte(16'hfffd, 0, 1, 1, 48'h6300_0000, 48'h6300_1000);
+            program_dbte(16'hfffe, 0, 1, 1, 48'h6300_0000, 48'h6300_1000);
+            program_dbte(16'hffff, 0, 1, 1, 48'h6300_0000, 48'h6300_1000);
+            expected_metadata = {4'hf, 19'b0, 1'b0, 1'b1, 1'b1, 1'b0,
+                                 5'h1, 48'h6300_1000, 48'h6300_0000};
+            master_agent_1.AXI4_READ_BURST(0, dbte_mb + (16'hffff * 16), len, size,
+                burst, lock, cache, prot, region, qos, aruser,
+                read_data, read_resp, read_ruser);
+            if (read_data[127:0] !== expected_metadata) begin
+                $display("  ERROR: backing ID ffff readback=0x%0h expected=0x%0h",
+                    read_data[127:0], expected_metadata);
+                test_fail_count++;
+            end
+            enable_checker();
+            free_all();
+            clr_err();
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt, resp);
+            if (err_cnt != 0)
+                $display("  ERROR: err counter not clear before ID ffff access: 0x%0h", err_cnt);
+            ar_before = dbte_ar_count;
+            expected_addr = dbte_mb + (16'hfffc * 16);
+            master_agent_1.AXI4_WRITE_BURST(0, {16'hffff, 48'h6300_0000}, len, size,
+                burst, lock, cache, prot, region, qos, awuser, write_data, write_wuser, resp);
+            #100ns;
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt, resp);
+            if (dbte_ar_count == ar_before + 1 && last_dbte_araddr == expected_addr && err_cnt == 0) begin
+                $display("  last line address=0x%0h — PASS", last_dbte_araddr);
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: last ID AR=%0d addr=0x%0h expected=0x%0h err=0x%0h",
+                    dbte_ar_count - ar_before, last_dbte_araddr, expected_addr, err_cnt);
+                test_fail_count++;
+            end
+        end
+    endtask
+
+    task test_16b_compat_mode();
+        integer ar_before;
+        bit [31:0] cfg_readback;
+        xil_axi_resp_t resp0;
+        bit [8*4096-1:0] wdata0;
+        begin
+            $display("Test 29: runtime 16B compatibility mode");
+            disable_checker();
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_refill_cfg,
+                0, 32'h0, resp);
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_refill_cfg,
+                0, cfg_readback, resp);
+            expect_line64 = 0;
+            program_dbte(16'h0b04, 0, 1, 1, 48'h6400_0000, 48'h6400_1000);
+            program_dbte(16'h0b05, 0, 1, 1, 48'h6400_0000, 48'h6400_1000);
+            enable_checker();
+            free_all();
+            clr_err();
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h3, resp);
+            ar_before = dbte_ar_count;
+            wdata0 = {512{8'hc1}};
+
+            master_agent_1.AXI4_WRITE_BURST(0, {16'h0b04, 48'h6400_0000}, len, size,
+                burst, lock, cache, prot, region, qos, awuser, wdata0, write_wuser, resp0);
+            master_agent_1.AXI4_WRITE_BURST(0, {16'h0b05, 48'h6400_0040}, len, size,
+                burst, lock, cache, prot, region, qos, awuser, wdata0, write_wuser, resp0);
+            master_agent_1.AXI4_WRITE_BURST(0, {16'h0b04, 48'h6400_0080}, len, size,
+                burst, lock, cache, prot, region, qos, awuser, wdata0, write_wuser, resp0);
+            read_perf_counters();
+            read_refill_stats();
+            if (cfg_readback[0] == 0 && dbte_ar_count == ar_before + 2 &&
+                perf_miss == 2 && perf_hit >= 1 && refill_bytes == 32 &&
+                refill_hist[7:0] + refill_hist[15:8] + refill_hist[23:16] +
+                    refill_hist[31:24] == 2) begin
+                $display("  two 16B refills; first sector survived neighbor fill — PASS");
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: cfg=%0d AR=%0d miss=%0d hit=%0d",
+                    cfg_readback[0], dbte_ar_count - ar_before, perf_miss, perf_hit);
+                test_fail_count++;
+            end
+
+            disable_checker();
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_refill_cfg,
+                0, 32'h1, resp);
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_refill_cfg,
+                0, cfg_readback, resp);
+            expect_line64 = 1;
+            if (cfg_readback[0] != 1) begin
+                $display("  ERROR: failed to restore 64B mode");
+                test_fail_count++;
+            end
+            enable_checker();
+        end
+    endtask
+
+    task test_first_line_refill();
+        integer ar_before;
+        xil_axi_resp_t resp0, resp1, resp2;
+        begin
+            $display("Test 30: IDs 1..3 refill from line 0; ID 0 stays reserved");
+            disable_checker();
+            program_dbte(16'h0001, 0, 1, 1, 48'h6500_0000, 48'h6500_1000);
+            program_dbte(16'h0002, 0, 1, 1, 48'h6500_0000, 48'h6500_1000);
+            program_dbte(16'h0003, 0, 1, 1, 48'h6500_0000, 48'h6500_1000);
+            enable_checker();
+            free_all();
+            clr_err();
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h3, resp);
+            ar_before = dbte_ar_count;
+            fork
+                master_agent_1.AXI4_WRITE_BURST(0, {16'h0001, 48'h6500_0000}, len, size,
+                    burst, lock, cache, prot, region, qos, awuser, write_data, write_wuser, resp0);
+                master_agent_1.AXI4_WRITE_BURST(1, {16'h0002, 48'h6500_0040}, len, size,
+                    burst, lock, cache, prot, region, qos, awuser, write_data, write_wuser, resp1);
+                master_agent_1.AXI4_WRITE_BURST(2, {16'h0003, 48'h6500_0080}, len, size,
+                    burst, lock, cache, prot, region, qos, awuser, write_data, write_wuser, resp2);
+            join
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt, resp);
+            if (dbte_ar_count == ar_before + 1 && last_dbte_araddr == dbte_mb && err_cnt == 0) begin
+                $display("  one aligned refill served IDs 1..3 — PASS");
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: AR=%0d addr=0x%0h err=0x%0h",
+                    dbte_ar_count - ar_before, last_dbte_araddr, err_cnt);
+                test_fail_count++;
+            end
+        end
+    endtask
+
+    task test_mixed_sector_modes();
+        integer ar_before;
+        xil_axi_resp_t resp0;
+        begin
+            $display("Test 31: cache and no-cache sectors remain independent");
+            disable_checker();
+            program_dbte(16'h0c04, 0, 1, 1, 48'h6600_0000, 48'h6600_1000);
+            program_dbte(16'h0c05, 1, 1, 1, 48'h6600_0000, 48'h6600_1000);
+            program_dbte(16'h0c06, 0, 0, 1, 48'h6600_0000, 48'h6600_1000);
+            program_dbte(16'h0c07, 0, 1, 1, 48'h6600_0000, 48'h6600_1000);
+            enable_checker();
+            free_all();
+            clr_err();
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h3, resp);
+            ar_before = dbte_ar_count;
+
+            master_agent_1.AXI4_WRITE_BURST(0, {16'h0c04, 48'h6600_0000}, len, size,
+                burst, lock, cache, prot, region, qos, awuser, write_data, write_wuser, resp0);
+            master_agent_1.AXI4_WRITE_BURST(0, {16'h0c07, 48'h6600_0040}, len, size,
+                burst, lock, cache, prot, region, qos, awuser, write_data, write_wuser, resp0);
+            master_agent_1.AXI4_WRITE_BURST(0, {16'h0c05, 48'h6600_0080}, len, size,
+                burst, lock, cache, prot, region, qos, awuser, write_data, write_wuser, resp0);
+            master_agent_1.AXI4_WRITE_BURST(0, {16'h0c05, 48'h6600_00c0}, len, size,
+                burst, lock, cache, prot, region, qos, awuser, write_data, write_wuser, resp0);
+            read_perf_counters();
+            if (dbte_ar_count == ar_before + 3 && perf_miss == 3 && perf_hit >= 1) begin
+                $display("  cache sectors hit; no-cache sector refilled twice — PASS");
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: AR=%0d miss=%0d hit=%0d",
+                    dbte_ar_count - ar_before, perf_miss, perf_hit);
+                test_fail_count++;
+            end
+        end
+    endtask
+
+    task test_refill_rresp_error();
+        integer ar_before;
+        xil_axi_resp_t resp0;
+        begin
+            $display("Test 32: one bad RRESP invalidates the complete refill");
+            disable_checker();
+            program_dbte(16'h0d04, 0, 1, 1, 48'h6700_0000, 48'h6700_1000);
+            program_dbte(16'h0d05, 0, 1, 1, 48'h6700_0000, 48'h6700_1000);
+            program_dbte(16'h0d06, 0, 1, 1, 48'h6700_0000, 48'h6700_1000);
+            program_dbte(16'h0d07, 0, 1, 1, 48'h6700_0000, 48'h6700_1000);
+            enable_checker();
+            free_all();
+            clr_err();
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h3, resp);
+            ar_before = dbte_ar_count;
+            slave_agent.inject_rresp_once(dbte_mb + (16'h0d04 * 16), 2,
+                                           XIL_AXI_RESP_SLVERR);
+            master_agent_1.AXI4_WRITE_BURST(0, {16'h0d04, 48'h6700_0000}, len, size,
+                burst, lock, cache, prot, region, qos, awuser, write_data, write_wuser, resp0);
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt, resp);
+            if (dbte_ar_count == ar_before + 1 && err_cnt[24:18] >= 1) begin
+                $display("  bad line rejected — PASS");
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: AR=%0d invalid_err=%0d",
+                    dbte_ar_count - ar_before, err_cnt[24:18]);
+                test_fail_count++;
+            end
+
+            clr_err();
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h3, resp);
+            master_agent_1.AXI4_WRITE_BURST(0, {16'h0d04, 48'h6700_0040}, len, size,
+                burst, lock, cache, prot, region, qos, awuser, write_data, write_wuser, resp0);
+            read_perf_counters();
+            if (dbte_ar_count == ar_before + 2 && perf_miss == 1 && perf_hit == 0) begin
+                $display("  failed refill was not cached — PASS");
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: recovery AR=%0d miss=%0d hit=%0d",
+                    dbte_ar_count - ar_before, perf_miss, perf_hit);
+                test_fail_count++;
+            end
+        end
+    endtask
+
+    task test_refill_early_rlast();
+        integer ar_before;
+        xil_axi_resp_t resp0;
+        begin
+            $display("Test 33: early RLAST invalidates the complete refill");
+            // These two tests deliberately violate AXI.  Keep the protocol
+            // checker active, but downgrade the expected violation to warning.
+            UUT.axi_vip_output.inst.IF.PC.set_fatal_to_warnings();
+            disable_checker();
+            program_dbte(16'h0d08, 0, 1, 1, 48'h6710_0000, 48'h6710_1000);
+            enable_checker();
+            free_all();
+            clr_err();
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h3, resp);
+            ar_before = dbte_ar_count;
+            slave_agent.inject_len_once(dbte_mb + (16'h0d08 * 16), 1);
+            master_agent_1.AXI4_WRITE_BURST(0, {16'h0d08, 48'h6710_0000}, len, size,
+                burst, lock, cache, prot, region, qos, awuser, write_data, write_wuser, resp0);
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt, resp);
+            if (dbte_ar_count == ar_before + 1 && err_cnt[24:18] >= 1) begin
+                $display("  early RLAST rejected — PASS");
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: AR=%0d invalid_err=%0d",
+                    dbte_ar_count - ar_before, err_cnt[24:18]);
+                test_fail_count++;
+            end
+
+            clr_err();
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h3, resp);
+            master_agent_1.AXI4_WRITE_BURST(0, {16'h0d08, 48'h6710_0040}, len, size,
+                burst, lock, cache, prot, region, qos, awuser, write_data, write_wuser, resp0);
+            read_perf_counters();
+            if (dbte_ar_count == ar_before + 2 && perf_miss == 1 && perf_hit == 0) begin
+                $display("  recovery refill succeeded — PASS");
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: recovery AR=%0d miss=%0d hit=%0d",
+                    dbte_ar_count - ar_before, perf_miss, perf_hit);
+                test_fail_count++;
+            end
+        end
+    endtask
+
+    task test_refill_late_rlast();
+        integer ar_before;
+        xil_axi_resp_t resp0;
+        begin
+            $display("Test 34: late RLAST invalidates and drains the refill");
+            // The AXI VIP monitor sizes its transaction from ARLEN and cannot
+            // represent an illegal extra beat.  The protocol checker remains
+            // enabled (as warnings); stop only the bookkeeping monitor here.
+            slave_agent.stop_monitor();
+            disable_checker();
+            program_dbte(16'h0d0c, 0, 1, 1, 48'h6720_0000, 48'h6720_1000);
+            enable_checker();
+            free_all();
+            clr_err();
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h3, resp);
+            ar_before = dbte_ar_count;
+            slave_agent.inject_len_once(dbte_mb + (16'h0d0c * 16), 4);
+            master_agent_1.AXI4_WRITE_BURST(0, {16'h0d0c, 48'h6720_0000}, len, size,
+                burst, lock, cache, prot, region, qos, awuser, write_data, write_wuser, resp0);
+            ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt, resp);
+            if (dbte_ar_count == ar_before + 1 && err_cnt[24:18] >= 1) begin
+                $display("  late RLAST rejected and drained — PASS");
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: AR=%0d invalid_err=%0d",
+                    dbte_ar_count - ar_before, err_cnt[24:18]);
+                test_fail_count++;
+            end
+
+            clr_err();
+            ctrl_agent.AXI4LITE_WRITE_BURST(reg_base + reg_chk_en, 0, 32'h3, resp);
+            master_agent_1.AXI4_WRITE_BURST(0, {16'h0d0c, 48'h6720_0040}, len, size,
+                burst, lock, cache, prot, region, qos, awuser, write_data, write_wuser, resp0);
+            read_perf_counters();
+            if (dbte_ar_count == ar_before + 2 && perf_miss == 1 && perf_hit == 0) begin
+                $display("  R channel recovered for next refill — PASS");
+                test_pass_count++;
+            end else begin
+                $display("  ERROR: recovery AR=%0d miss=%0d hit=%0d",
+                    dbte_ar_count - ar_before, perf_miss, perf_hit);
+                test_fail_count++;
+            end
+            UUT.axi_vip_output.inst.IF.PC.clr_fatal_to_warnings();
         end
     endtask
 

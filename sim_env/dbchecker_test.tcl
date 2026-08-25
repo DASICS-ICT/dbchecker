@@ -498,7 +498,7 @@ proc cr_bd_test_design { parentCell } {
   assign_bd_address -offset 0x00000000 -range 0x000100000000 -target_address_space [get_bd_addr_spaces axi_vip_ctrl/Master_AXI] [get_bd_addr_segs dbchecker_wrapper_0/s_axil_ctrl/reg0] -force
   assign_bd_address -offset 0x00000000 -range 0x00010000000000000000 -target_address_space [get_bd_addr_spaces axi_vip_input_0/Master_AXI] [get_bd_addr_segs dbchecker_wrapper_0/s_axi_io_rx/reg0] -force
   assign_bd_address -offset 0x00000000 -range 0x00010000000000000000 -target_address_space [get_bd_addr_spaces axi_vip_input_1/Master_AXI] [get_bd_addr_segs dbchecker_wrapper_0/s_axi_io_rx/reg0] -force
-  assign_bd_address -offset 0x40000000 -range 0x000100000 -target_address_space [get_bd_addr_spaces dbchecker_wrapper_0/m_axi_dbte] [get_bd_addr_segs axi_vip_output/S_AXI/Reg] -force
+  assign_bd_address -offset 0x40000000 -range 0x000200000 -target_address_space [get_bd_addr_spaces dbchecker_wrapper_0/m_axi_dbte] [get_bd_addr_segs axi_vip_output/S_AXI/Reg] -force
   assign_bd_address -offset 0x0 -range 0x8000000000000000 -target_address_space [get_bd_addr_spaces dbchecker_wrapper_0/m_axi_io_rx] [get_bd_addr_segs axi_vip_output/S_AXI/Reg] -force
 
 
