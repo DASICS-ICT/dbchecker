@@ -46,6 +46,12 @@ class DBChecker extends Module with DBCheckerConst {
   handler.err_req_w <> ctrl.err_req_w
   handler.dbte_sram_r <> dbte_mem.readPorts(0)
   handler.dbte_meta_sram_r <> dbte_meta_mem.readPorts(1)
+  handler.dbte_sram_write.enable := ctrl.dbte_sram_w.enable
+  handler.dbte_sram_write.address := ctrl.dbte_sram_w.address
+  handler.dbte_sram_write.data := ctrl.dbte_sram_w.data
+  handler.dbte_meta_sram_write.enable := ctrl.dbte_meta_sram_w.enable
+  handler.dbte_meta_sram_write.address := ctrl.dbte_meta_sram_w.address
+  handler.dbte_meta_sram_write.data := ctrl.dbte_meta_sram_w.data
   handler.refill_dbte_req_if <> ctrl.refill_dbte_req_if
   ctrl.refill_dbte_rsp_if <> handler.refill_dbte_rsp_if
   // Performance accounting is not part of request correctness.  Register it

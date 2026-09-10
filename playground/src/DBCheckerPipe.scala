@@ -53,6 +53,8 @@ class DBCheckerPipeStage1 extends Module with DBCheckerConst { // readDBTE
   val invalidate  = IO(Input(new DBCheckerInvalidate))
   val dbte_sram_if = IO(Flipped(new MemoryReadPort(UInt(128.W), log2Up(dbte_num))))
   val dbte_meta_sram_if = IO(Flipped(new MemoryReadPort(new DBCheckerCacheMeta, log2Up(dbte_set_num))))
+  val dbte_sram_write = IO(Input(new DBCheckerDataWriteForward))
+  val dbte_meta_sram_write = IO(Input(new DBCheckerMetaWriteForward))
   val dbte_refill_req_if = IO(Decoupled(new DBCheckerDBTEReq))
   val dbte_refill_rsp_if = IO(Flipped(Decoupled(new DBCheckerDBTERsp)))
   val refill_line64 = IO(Input(Bool()))
@@ -130,19 +132,28 @@ class DBCheckerPipeStage1 extends Module with DBCheckerConst { // readDBTE
 
   val lookupRspValid = RegNext(lookupAny, false.B)
   val lookupRspSlot = RegEnable(lookupSlot, lookupAny)
+  val lookupDataWriteHit = lookupAny && dbte_sram_write.enable &&
+                           dbte_sram_write.address === dbte_sram_if.address
+  val lookupMetaWriteHit = lookupAny && dbte_meta_sram_write.enable &&
+                           dbte_meta_sram_write.address === dbte_meta_sram_if.address
+  val lookupDataForwardValid = RegNext(lookupDataWriteHit, false.B)
+  val lookupMetaForwardValid = RegNext(lookupMetaWriteHit, false.B)
+  val lookupDataForward = RegEnable(dbte_sram_write.data, lookupDataWriteHit)
+  val lookupMetaForward = RegEnable(dbte_meta_sram_write.data, lookupMetaWriteHit)
   when(lookupAny) {
     robState(lookupSlot) := stateLookup
   }
 
   val lookupPtr = entryPtr(robMedium(lookupRspSlot))
-  val lookupMtdt = dbte_sram_if.data.asTypeOf(new DBCheckerMtdt)
-  val lookupMeta = dbte_meta_sram_if.data
+  val lookupData = Mux(lookupDataForwardValid, lookupDataForward, dbte_sram_if.data)
+  val lookupMtdt = lookupData.asTypeOf(new DBCheckerMtdt)
+  val lookupMeta = Mux(lookupMetaForwardValid, lookupMetaForward, dbte_meta_sram_if.data)
   val lookupHit = lookupMeta.valid(lookupPtr.get_sector) &&
                   lookupMeta.tag === lookupPtr.get_tag &&
                   lookupMtdt.v && lookupMtdt.index_offset === lookupPtr.get_index(3, 0)
   when(lookupRspValid && robValid(lookupRspSlot) && robState(lookupRspSlot) === stateLookup) {
     when(lookupHit) {
-      robDbte(lookupRspSlot) := dbte_sram_if.data
+      robDbte(lookupRspSlot) := lookupData
       robState(lookupRspSlot) := stateResolved
     }.otherwise {
       robState(lookupRspSlot) := stateMiss
@@ -474,6 +485,8 @@ class DBCheckerPipeline extends Module with DBCheckerConst {
   val err_req_w    = IO(Decoupled(new DBCheckerErrReq))
   val dbte_sram_r  = IO(Flipped(new MemoryReadPort(UInt(128.W), log2Up(dbte_num))))
   val dbte_meta_sram_r = IO(Flipped(new MemoryReadPort(new DBCheckerCacheMeta, log2Up(dbte_set_num))))
+  val dbte_sram_write = IO(Input(new DBCheckerDataWriteForward))
+  val dbte_meta_sram_write = IO(Input(new DBCheckerMetaWriteForward))
   val refill_dbte_req_if = IO(Decoupled(new DBCheckerDBTEReq))
   val refill_dbte_rsp_if = IO(Flipped(Decoupled(new DBCheckerDBTERsp)))
   val debug_if     = IO(Output(UInt(128.W)))
@@ -497,6 +510,8 @@ class DBCheckerPipeline extends Module with DBCheckerConst {
   stage1.invalidate := invalidate
   stage1.dbte_sram_if <> dbte_sram_r
   stage1.dbte_meta_sram_if <> dbte_meta_sram_r
+  stage1.dbte_sram_write := dbte_sram_write
+  stage1.dbte_meta_sram_write := dbte_meta_sram_write
   stage1.dbte_refill_req_if <> refill_dbte_req_if
   stage1.dbte_refill_rsp_if <> refill_dbte_rsp_if
   stage1.refill_line64 := ctrl_reg(chk_refill_cfg)(0)

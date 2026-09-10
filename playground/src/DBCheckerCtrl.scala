@@ -390,19 +390,24 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
           dbte_sram_w.enable := true.B
         }
 
+        // Publish the replacement tag and the valid mask with every data-SRAM
+        // writeback beat.  A different-tag refill therefore evicts the old
+        // line before any newly written sector can be observed under its tag.
+        val demand_mask = UIntToOH(refill_index_reg(1, 0), dbte_line_entries)
+        val preserved_valid = Mux(!refill_line64_reg && refill_old_meta.tag === wb_tag,
+                                  refill_old_meta.valid,
+                                  0.U) & ~demand_mask & ~effective_poison_mask
+        val written_mask = VecInit((0 until dbte_line_entries).map(sector =>
+          sector.U <= refill_wb_sector)).asUInt
+        val new_meta = Wire(new DBCheckerCacheMeta)
+        new_meta.tag := wb_tag
+        new_meta.valid := (preserved_valid | (fill_valid.asUInt & written_mask)) &
+                          ~effective_poison_mask
+        dbte_meta_sram_w.address := wb_set
+        dbte_meta_sram_w.data := new_meta
+        dbte_meta_sram_w.enable := true.B
+
         when(refill_wb_sector === (dbte_line_entries - 1).U) {
-          val new_meta = Wire(new DBCheckerCacheMeta)
-          new_meta.tag := wb_tag
-          val demand_mask = UIntToOH(refill_index_reg(1, 0), dbte_line_entries)
-          val preserved_valid = Mux(refill_old_meta.tag === wb_tag,
-                                    refill_old_meta.valid,
-                                    0.U) & ~demand_mask & ~effective_poison_mask
-          new_meta.valid := Mux(refill_line64_reg,
-                                fill_valid.asUInt,
-                                preserved_valid | fill_valid.asUInt)
-          dbte_meta_sram_w.address := wb_set
-          dbte_meta_sram_w.data := new_meta
-          dbte_meta_sram_w.enable := true.B
           refill_state := DBCheckerRefillState.RSP
         }.otherwise {
           refill_wb_sector := refill_wb_sector + 1.U

@@ -171,6 +171,18 @@ class DBCheckerCacheMeta extends Bundle with DBCheckerConst {
   val tag = UInt((16 - log2Up(dbte_num)).W)
   val valid = UInt(dbte_line_entries.W)
 }
+
+class DBCheckerDataWriteForward extends Bundle with DBCheckerConst {
+  val enable = Bool()
+  val address = UInt(log2Up(dbte_num).W)
+  val data = UInt(128.W)
+}
+
+class DBCheckerMetaWriteForward extends Bundle with DBCheckerConst {
+  val enable = Bool()
+  val address = UInt(log2Up(dbte_set_num).W)
+  val data = new DBCheckerCacheMeta
+}
 object DBCheckerFetchState extends ChiselEnum {
   val RREQ, RRSP = Value
 }
