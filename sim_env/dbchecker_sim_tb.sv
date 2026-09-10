@@ -76,10 +76,13 @@ module dbchecker_sim_tb();
     localparam reg_chk_perf_miss    = 32'h0000_0024;  // reg 9
     localparam reg_chk_perf_penalty = 32'h0000_0028;  // reg 10
     localparam reg_chk_refill_cfg   = 32'h0000_002C;  // reg 11
-    localparam reg_chk_refill_hist  = 32'h0000_0040;  // reg 16
-    localparam reg_chk_diff_wait    = 32'h0000_0044;  // reg 17
-    localparam reg_chk_rob_full     = 32'h0000_0048;  // reg 18
-    localparam reg_chk_refill_bytes = 32'h0000_004C;  // reg 19
+    localparam reg_chk_refill_hist_1  = 32'h0000_0040;  // reg 16
+    localparam reg_chk_refill_hist_2  = 32'h0000_0044;  // reg 17
+    localparam reg_chk_refill_hist_3  = 32'h0000_0048;  // reg 18
+    localparam reg_chk_refill_hist_4p = 32'h0000_004C;  // reg 19
+    localparam reg_chk_diff_wait      = 32'h0000_0050;  // reg 20
+    localparam reg_chk_rob_full       = 32'h0000_0054;  // reg 21
+    localparam reg_chk_refill_bytes   = 32'h0000_0058;  // reg 22
     localparam dbte_mb = 48'h4000_2000;
     localparam dbte_len = 128;
     
@@ -113,7 +116,8 @@ module dbchecker_sim_tb();
     bit [31:0] err_info;
     bit [31:0] val0, val1, val2, val3;
     bit [31:0] perf_hit, perf_miss, perf_penalty;
-    bit [31:0] refill_hist, diff_wait_cycles, rob_full_cycles, refill_bytes;
+    bit [31:0] refill_hist [3:0];
+    bit [31:0] diff_wait_cycles, rob_full_cycles, refill_bytes;
     bit [64:0] free_cmd;
 
     bit [31:0] physical_ptr_array [31:0];
@@ -1605,8 +1609,14 @@ module dbchecker_sim_tb();
     endtask
 
     task read_refill_stats();
-        ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_refill_hist,
-            0, refill_hist, resp);
+        ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_refill_hist_1,
+            0, refill_hist[0], resp);
+        ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_refill_hist_2,
+            0, refill_hist[1], resp);
+        ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_refill_hist_3,
+            0, refill_hist[2], resp);
+        ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_refill_hist_4p,
+            0, refill_hist[3], resp);
         ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_diff_wait,
             0, diff_wait_cycles, resp);
         ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_rob_full,
@@ -2159,8 +2169,8 @@ module dbchecker_sim_tb();
             read_refill_stats();
             ctrl_agent.AXI4LITE_READ_BURST(reg_base + reg_chk_err_cnt, 0, err_cnt, resp);
             if (dbte_ar_count == ar_before + 1 && perf_miss == 1 && err_cnt == 0 &&
-                refill_hist[7:0] + refill_hist[15:8] + refill_hist[23:16] +
-                    refill_hist[31:24] == 1 && refill_bytes == 64) begin
+                refill_hist[0] + refill_hist[1] + refill_hist[2] +
+                    refill_hist[3] == 1 && refill_bytes == 64) begin
                 $display("  one DBTE AR served four requests — PASS");
                 test_pass_count++;
             end else begin
@@ -2246,8 +2256,8 @@ module dbchecker_sim_tb();
             read_refill_stats();
             if (dbte_ar_count == ar_before + batch_refills + 1 &&
                 perf_miss == batch_refills + 1 && perf_hit == 0 &&
-                refill_hist[7:0] + refill_hist[15:8] + refill_hist[23:16] +
-                    refill_hist[31:24] == batch_refills + 1 &&
+                refill_hist[0] + refill_hist[1] + refill_hist[2] +
+                    refill_hist[3] == batch_refills + 1 &&
                 refill_bytes == (batch_refills + 1) * 64) begin
                 $display("  later request refilled again — PASS");
                 test_pass_count++;
@@ -2357,8 +2367,8 @@ module dbchecker_sim_tb();
             read_refill_stats();
             if (cfg_readback[0] == 0 && dbte_ar_count == ar_before + 2 &&
                 perf_miss == 2 && perf_hit >= 1 && refill_bytes == 32 &&
-                refill_hist[7:0] + refill_hist[15:8] + refill_hist[23:16] +
-                    refill_hist[31:24] == 2) begin
+                refill_hist[0] + refill_hist[1] + refill_hist[2] +
+                    refill_hist[3] == 2) begin
                 $display("  two 16B refills; first sector survived neighbor fill — PASS");
                 test_pass_count++;
             end else begin

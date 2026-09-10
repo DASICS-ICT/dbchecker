@@ -43,7 +43,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   val perf_hit_cnt     = RegInit(0.U(32.W))
   val perf_miss_cnt    = RegInit(0.U(32.W))
   val perf_penalty_cnt = RegInit(0.U(32.W))
-  val perf_refill_hist = RegInit(VecInit(Seq.fill(4)(0.U(8.W))))
+  val perf_refill_hist = RegInit(VecInit(Seq.fill(4)(0.U(32.W))))
   val perf_diff_line_wait_cnt = RegInit(0.U(32.W))
   val perf_rob_full_cnt = RegInit(0.U(32.W))
   val perf_refill_bytes_cnt = RegInit(0.U(32.W))
@@ -89,7 +89,10 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
           is(chk_perf_hit.U)     { s_axil.r.bits.data := perf_hit_cnt }
           is(chk_perf_miss.U)    { s_axil.r.bits.data := perf_miss_cnt }
           is(chk_perf_penalty.U) { s_axil.r.bits.data := perf_penalty_cnt }
-          is(chk_refill_hist.U)    { s_axil.r.bits.data := perf_refill_hist.asUInt }
+          is(chk_refill_hist_1.U)  { s_axil.r.bits.data := perf_refill_hist(0) }
+          is(chk_refill_hist_2.U)  { s_axil.r.bits.data := perf_refill_hist(1) }
+          is(chk_refill_hist_3.U)  { s_axil.r.bits.data := perf_refill_hist(2) }
+          is(chk_refill_hist_4p.U) { s_axil.r.bits.data := perf_refill_hist(3) }
           is(chk_diff_line_wait.U) { s_axil.r.bits.data := perf_diff_line_wait_cnt }
           is(chk_rob_full.U)       { s_axil.r.bits.data := perf_rob_full_cnt }
           is(chk_refill_bytes.U)   { s_axil.r.bits.data := perf_refill_bytes_cnt }
@@ -457,7 +460,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
     val waiter_bucket = Mux(perf_event.refill_waiters >= 4.U,
                             3.U(2.W),
                             (perf_event.refill_waiters - 1.U)(1, 0))
-    when(perf_refill_hist(waiter_bucket) =/= 255.U) {
+    when(!saturated(perf_refill_hist(waiter_bucket))) {
       perf_refill_hist(waiter_bucket) := perf_refill_hist(waiter_bucket) + 1.U
     }
   }
@@ -480,7 +483,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
     perf_hit_cnt     := 0.U
     perf_miss_cnt    := 0.U
     perf_penalty_cnt := 0.U
-    perf_refill_hist := VecInit(Seq.fill(4)(0.U(8.W)))
+    perf_refill_hist := VecInit(Seq.fill(4)(0.U(32.W)))
     perf_diff_line_wait_cnt := 0.U
     perf_rob_full_cnt := 0.U
     perf_refill_bytes_cnt := 0.U

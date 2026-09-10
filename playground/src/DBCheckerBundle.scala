@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.util._
 import axi._
 trait DBCheckerConst {
-  val RegNum    = 20
+  val RegNum    = 23
   val dbte_num  = 4096
   val dbte_line_entries = 4
   val dbte_set_num = dbte_num / dbte_line_entries
@@ -43,10 +43,13 @@ trait DBCheckerConst {
   val chk_refill_cfg = 0xB // 0x2C
 
   // 0x30/0x34 remain reserved for the older auto-release experiment.
-  val chk_refill_hist      = 0x10 // 0x40: 4 x 8-bit waiter-count buckets
-  val chk_diff_line_wait   = 0x11 // 0x44
-  val chk_rob_full         = 0x12 // 0x48
-  val chk_refill_bytes     = 0x13 // 0x4C
+  val chk_refill_hist_1    = 0x10 // 0x40: refills serving 1 request
+  val chk_refill_hist_2    = 0x11 // 0x44: refills serving 2 requests
+  val chk_refill_hist_3    = 0x12 // 0x48: refills serving 3 requests
+  val chk_refill_hist_4p   = 0x13 // 0x4C: refills serving at least 4 requests
+  val chk_diff_line_wait   = 0x14 // 0x50
+  val chk_rob_full         = 0x15 // 0x54
+  val chk_refill_bytes     = 0x16 // 0x58
 
 
   def cmd_op_free    = 0.U(1.W)
