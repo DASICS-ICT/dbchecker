@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.util._
 import axi._
 
-class DBCheckerCtrl extends Module with DBCheckerConst {
+class DBCheckerLegacyCtrl extends Module with DBCheckerConst {
   assert(RegNum >= 2, "RegNum must be at least 2")
   // io
   val s_axil       = IO(new AxiLiteSlave(32, 32))

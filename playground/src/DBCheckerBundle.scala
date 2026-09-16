@@ -142,3 +142,65 @@ class DBCheckerPerfEvent extends Bundle {
   val miss    = Bool()
   val penalty = Bool()
 }
+
+object DBCheckerConfig {
+  val requestDepth = sys.env.getOrElse("DBCHECKER_D", "64").toInt
+  val refillCapacity = sys.env.getOrElse("DBCHECKER_KMAX", "64").toInt
+  val cacheEntries = sys.env.getOrElse("DBCHECKER_CACHE", "4096").toInt
+  // Occupancy/status MMIO fields are eight bits, including the full count.
+  require(requestDepth >= 2 && requestDepth <= 128 && isPow2(requestDepth))
+  require(refillCapacity >= 2 && refillCapacity <= 128 && isPow2(refillCapacity))
+  require(cacheEntries >= 2 && cacheEntries <= 32768 && isPow2(cacheEntries))
+  val slotBits = log2Ceil(requestDepth)
+  val creditBits = log2Ceil(refillCapacity + 1)
+}
+
+class DBCheckerRequest extends Bundle {
+  val axi_a = new AxiAddr(64, idWidth = 5)
+  val is_write = Bool()
+  val bypass = Bool()
+}
+class DBCheckerMetaKey extends Bundle {
+  val slot = UInt(DBCheckerConfig.slotBits.W)
+  val index = UInt(16.W)
+}
+object DBCheckerMetaStatus {
+  val data = 0.U(2.W)
+  val miss = 1.U(2.W)
+  val invalid = 2.U(2.W)
+  val retry = 3.U(2.W)
+}
+class DBCheckerMetaDone extends Bundle {
+  val key = new DBCheckerMetaKey
+  val status = UInt(2.W)
+  val dbte = UInt(128.W)
+}
+class DBCheckerFill extends Bundle {
+  val key = new DBCheckerMetaKey
+  val dbte = UInt(128.W)
+}
+class DBCheckerFreeWindow extends Bundle {
+  val active = Bool()
+  val clear_all = Bool()
+  val index = UInt(16.W)
+  def matches(idx: UInt): Bool = active && (clear_all || index === idx)
+}
+class DBCheckerCommit extends Bundle {
+  val request = new DBCheckerRequest
+  val error = Bool()
+  val error_info = new DBCheckerErrReq
+}
+class DBCheckerEvents extends Bundle {
+  val accepted = Bool()
+  val committed = Bool()
+  val lookup = Bool()
+  val hit = Bool()
+  val ar = Bool()
+  val r = Bool()
+  val refill_done = Bool()
+  val retry = Bool()
+  val input_stall = Bool()
+  val head_wait = Bool()
+  val output_ar = Bool()
+  val output_aw = Bool()
+}

@@ -20,7 +20,7 @@ class DBChecker extends Module with DBCheckerConst {
   val dbte_mem = SRAM(dbte_num, UInt(128.W), 2, 1, 0)
 
   // ctrl module
-  val ctrl = Module(new DBCheckerCtrl)
+  val ctrl = Module(new DBCheckerLegacyCtrl)
   // ctrl.m_axi <> m_axi_ctrl
   ctrl.s_axil <> s_axil_ctrl
   dbte_mem.writePorts(0) <> ctrl.dbte_sram_w
@@ -35,7 +35,7 @@ class DBChecker extends Module with DBCheckerConst {
   // s_axi_io_rx <> rx_rb.s_axi
 
 // we assume that there is no out-of-order request
-  val handler = Module(new DBCheckerPipeline)
+  val handler = Module(new DBCheckerLegacyPipeline)
   handler.m_axi_io_rx <> m_axi_io_rx
   handler.s_axi_io_rx <> s_axi_io_rx
   handler.ctrl_reg <> ctrl.ctrl_reg

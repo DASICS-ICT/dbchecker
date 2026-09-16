@@ -349,7 +349,7 @@ class DBCheckerPipeStage4W extends Module with DBCheckerConst { // Return_W
   in_pipe.ready := !pipe_v_reg || transfer_done
 }
 
-class DBCheckerPipeline extends Module with DBCheckerConst {
+class DBCheckerLegacyPipeline extends Module with DBCheckerConst {
   val m_axi_io_rx  = IO(new AxiMaster(64, 128, idWidth = 5))
   val s_axi_io_rx  = IO(new AxiSlave(64, 128, idWidth = 5))
   val ctrl_reg     = IO(Input(Vec(RegNum, UInt(32.W))))
