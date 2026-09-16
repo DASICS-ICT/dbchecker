@@ -5,7 +5,6 @@ import chisel3.util._
 import axi._
 trait DBCheckerConst {
   val RegNum    = 32
-  val dbte_num  = 4096
 
   // reg index (actual addr is 4 byte aligned, r/w lo-hi)
   // checker enable register  (0x0, RW) : checker enable / disable register
@@ -47,12 +46,9 @@ trait DBCheckerConst {
   def err_wrong_dev = 3.U(2.W)
 }
 
-class DBCheckerEnCtl extends Bundle with DBCheckerConst{
-  val en_dev_bm = UInt(32.W) // enable device ID bitmap
-}
 class DBCheckerMtdt extends Bundle with DBCheckerConst {
-  val index_offset = UInt((16 - log2Up(dbte_num)).W)
-  val reserved     = UInt(( 7 + log2Up(dbte_num)).W)
+  val index_offset = UInt(4.W)
+  val reserved     = UInt(19.W)
   val no_cache     = Bool()
   val v            = Bool()
   val w            = Bool()
@@ -90,57 +86,6 @@ class DBCheckerCommand extends Bundle with DBCheckerConst{
   val op     = UInt(1.W)
   val imm    = UInt(30.W)
 
-// used for free cmd
-  def get_index_lo: UInt = {
-    this.imm(15 - log2Up(dbte_num),0)
-  }
-  def get_index_hi: UInt = {
-    this.imm(15, 16 - log2Up(dbte_num))
-  }
-  def get_index: UInt = {
-    this.imm(15, 0)
-  }
-}
-
-class DBCheckerPtr extends Bundle with DBCheckerConst {
-  val dbte_index   = UInt(16.W)
-  val access_addr = UInt(48.W)
-  def get_index_hi: UInt = {
-    this.dbte_index(15, 16 - log2Up(dbte_num))
-  }
-  def get_index: UInt = {
-    this.dbte_index
-  }
-}
-
-// Pipeline passed structure
-class DBCheckerPipeMedium extends Bundle with DBCheckerConst {
-  val axi_a      = new AxiAddr(64, idWidth = 5)
-  val axi_a_type = Bool()
-  val dbte       = UInt(128.W)
-  val bypass     = Bool() // bypass checker
-  val err_v      = Bool()
-  val err_req    = new DBCheckerErrReq
-}
-
-class DBCheckerDBTEReq extends Bundle with DBCheckerConst {
-  val index     = UInt(16.W)
-}
-
-class DBCheckerDBTERsp extends Bundle with DBCheckerConst {
-  val dbte = UInt(128.W)
-}
-object DBCheckerFetchState extends ChiselEnum {
-  val RREQ, RRSP = Value
-}
-object DBCheckerRefillState extends ChiselEnum {
-  val AR, R, WB = Value
-}
-
-class DBCheckerPerfEvent extends Bundle {
-  val hit     = Bool()
-  val miss    = Bool()
-  val penalty = Bool()
 }
 
 object DBCheckerConfig {
