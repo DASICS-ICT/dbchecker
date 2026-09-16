@@ -28,3 +28,5 @@ test_run_dir/
 !sim_env/dbchecker_test.tcl
 sim_env/dbchecker_test
 sim_env/.Xil
+
+!sim_env/run_buffered_check.py
