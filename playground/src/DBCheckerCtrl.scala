@@ -124,7 +124,7 @@ class DBCheckerCtrl extends Module with DBCheckerConst {
   s_axil.r.bits.resp := readResp
   when(s_axil.r.fire) { readValid := false.B }
   val readIndex = s_axil.ar.bits.addr(6, 2)
-  val readWords = Wire(Vec(32, UInt(32.W)))
+  val readWords = Wire(Vec(RegNum, UInt(32.W)))
   readWords.foreach(_ := 0.U)
   readWords(chk_en) := en
   readWords(chk_cmd) := command

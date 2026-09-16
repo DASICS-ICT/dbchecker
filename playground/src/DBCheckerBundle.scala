@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.util._
 import axi._
 trait DBCheckerConst {
-  val RegNum    = 16
+  val RegNum    = 32
   val dbte_num  = 4096
 
   // reg index (actual addr is 4 byte aligned, r/w lo-hi)
